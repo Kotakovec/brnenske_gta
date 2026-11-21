@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GTA VI: BRNO | 3D Otevřený svět Moravské metropole</title>
+    <meta name="description" content="3D open-world akční hra ve stylu GTA 6 zasazená do Brna: Náměstí Svobody, Orloj, Hrad Špilberk, Petrov, AZ Tower, šaliny DPMB a honičky s Policií ČR." />
+    <script type="module" crossorigin src="./assets/index-p66S3jOp.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-KM_q-UAO.css">
+  </head>
+  <body>
+    <main id="game-root" aria-label="3D herní plátno GTA VI Brno">
+      <div id="canvas-mount"></div>
+
+      <!-- Subtle center crosshair when on foot with firearm -->
+      <div id="crosshair" class="crosshair" aria-hidden="true"></div>
+
+      <!-- START SCREEN OVERLAY (shows over live 3D drone orbit of Brno) -->
+      <section id="start-screen" class="start-screen" aria-labelledby="game-title">
+        <div class="start-card">
+          <p class="eyebrow">OPEN-WORLD 3D SANDBOX</p>
+          <h1 id="game-title" class="game-title">
+            GTA VI <span class="title-accent">BRNO</span>
+          </h1>
+          <p class="start-desc">
+            Prozkoumej 3D Brno od Brněnského orloje přes Hrad Špilberk a Petrov až po AZ Tower.
+            Řiď sporťáky, vyhýbej se šalinám DPMB, plň mise a unikni Policii ČR.
+          </p>
+
+          <div class="start-actions">
+            <button type="button" id="btn-play" class="btn btn-primary">Vyrazit do Brna</button>
+            <button type="button" id="btn-start-map" class="btn btn-secondary">Mapa Brna</button>
+            <button type="button" id="btn-start-controls" class="btn btn-secondary">Ovládání a nastavení</button>
+          </div>
+
+          <ul class="controls-strip" aria-label="Rychlý přehled ovládání">
+            <li><kbd>W A S D</kbd> Pohyb / Jízda</li>
+            <li><kbd>F</kbd> Nastoupit do auta</li>
+            <li><kbd>Shift</kbd> Sprint / Nitro</li>
+            <li><kbd>Space</kbd> Skok / Drift</li>
+            <li><kbd>1-4</kbd> Zbraně a klik střelba</li>
+            <li><kbd>M</kbd> Mapa a teleport</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- IN-GAME HUD -->
+      <div id="hud" class="hud" hidden>
+        <!-- Top-Left Toolbar -->
+        <header class="hud-toolbar" aria-label="Herní nástroje">
+          <button type="button" id="btn-hud-map" class="hud-btn" aria-label="Otevřít mapu Brna (klávesa M)">
+            Mapa <kbd>M</kbd>
+          </button>
+          <button type="button" id="btn-hud-menu" class="hud-btn" aria-label="Otevřít menu a nastavení (klávesa P)">
+            Menu <kbd>P</kbd>
+          </button>
+          <button type="button" id="btn-hud-time" class="hud-btn" aria-label="Přepnout denní dobu (klávesa T)">
+            Čas <kbd>T</kbd>
+          </button>
+          <button type="button" id="btn-hud-audio" class="hud-btn" aria-pressed="false" aria-label="Zapnout nebo ztlumit zvuk">
+            Zvuk: Zap
+          </button>
+          <button type="button" id="btn-hud-lock" class="hud-btn" aria-label="Zamknout kameru na myš (klávesa C)">
+            Kamera <kbd>C</kbd>
+          </button>
+        </header>
+
+        <!-- Top-Center Mission Tracker + Event Banner -->
+        <aside class="hud-mission" aria-label="Aktuální mise">
+          <div class="mission-box">
+            <div class="mission-row">
+              <strong id="hud-mission-title">Kulička z Orloje</strong>
+              <span id="hud-mission-dist" class="mission-dist">0 m</span>
+            </div>
+            <p id="hud-mission-hint" class="mission-hint">Dojdi k Brněnskému orloji na Náměstí Svobody</p>
+            <div class="mission-meta">
+              <span id="hud-collectibles">Kuličky: 0 / 10</span>
+              <span id="hud-fps" class="fps-tag">60 FPS</span>
+            </div>
+          </div>
+
+          <div id="event-banner" class="event-banner" role="status" aria-live="polite" hidden>
+            <strong id="banner-title"></strong>
+            <span id="banner-subtitle"></span>
+          </div>
+        </aside>
+
+        <!-- Top-Right Status Cluster (Wanted, Cash, District, Weapons) -->
+        <aside class="hud-status" aria-label="Stav hráče">
+          <div id="hud-wanted" class="wanted-stars" aria-label="Úroveň hledanosti Policie ČR"></div>
+          <div class="status-money" id="hud-money">5 000 Kč</div>
+          <div class="status-sub">
+            <span id="hud-district">Náměstí Svobody</span>
+            <span aria-hidden="true">•</span>
+            <span id="hud-clock">17:48</span>
+          </div>
+
+          <div class="weapon-bar" role="group" aria-label="Výběr zbraně">
+            <button type="button" class="weapon-slot" data-weapon="fists" aria-pressed="false">1 Pěsti</button>
+            <button type="button" class="weapon-slot" data-weapon="pistol" aria-pressed="true">2 CZ 75</button>
+            <button type="button" class="weapon-slot" data-weapon="smg" aria-pressed="false">3 EVO 3</button>
+            <button type="button" class="weapon-slot" data-weapon="rpg" aria-pressed="false">4 RPG</button>
+          </div>
+          <div class="ammo-readout">
+            <span id="hud-weapon-name">CZ 75 Brno 9mm</span>
+            <strong id="hud-ammo">60</strong>
+          </div>
+        </aside>
+
+        <!-- Bottom-Left Minimap + Health / Armor / Nitro Bars -->
+        <section class="hud-radar-wrap" aria-label="Minimapa a zdraví">
+          <div class="radar-frame">
+            <canvas id="minimap-canvas" width="196" height="196" aria-label="Radarová mapa okolí v Brně"></canvas>
+          </div>
+          <div class="vital-bars">
+            <div class="bar-track" aria-label="Zdraví">
+              <div id="bar-health" class="bar-fill bar-health" style="width: 100%"></div>
+            </div>
+            <div class="bar-track" aria-label="Vesta nebo Nitro">
+              <div id="bar-armor" class="bar-fill bar-armor" style="width: 100%"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bottom-Center Interactive Prompt -->
+        <div id="hud-prompt" class="hud-prompt" role="status" aria-live="polite" hidden></div>
+
+        <!-- Bottom-Right Vehicle Speedometer & Radio -->
+        <section id="hud-vehicle" class="hud-vehicle" aria-label="Tachometr a rádio" hidden>
+          <div class="veh-name" id="hud-veh-name">Leonida GT Moravia</div>
+          <div class="speed-row">
+            <span id="hud-speed" class="speed-num">0</span>
+            <span class="speed-unit">km/h</span>
+            <span id="hud-gear" class="gear-badge">1</span>
+          </div>
+          <div class="veh-radio-row">
+            <span id="hud-radio">RADIO BRNO 94.6 FM</span>
+            <button type="button" id="btn-radio-next" class="mini-btn" aria-label="Přepnout rádiovou stanici (R)">R</button>
+          </div>
+        </section>
+
+        <!-- Mobile / Coarse Pointer Touch Controls -->
+        <div id="touch-controls" class="touch-controls" aria-label="Dotykové ovládání">
+          <div id="touch-stick-base" class="touch-stick-base" aria-hidden="true">
+            <div id="touch-stick-knob" class="touch-stick-knob"></div>
+          </div>
+          <div class="touch-btns">
+            <button type="button" id="tbtn-enter" class="touch-btn">Auto [F]</button>
+            <button type="button" id="tbtn-interact" class="touch-btn">Akce [E]</button>
+            <button type="button" id="tbtn-sprint" class="touch-btn">Nitro</button>
+            <button type="button" id="tbtn-shoot" class="touch-btn touch-btn-accent">Střelba</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE FULL BRNO MAP DIALOG (Native <dialog> with closedby="any") -->
+      <dialog id="map-dialog" class="game-dialog map-dialog" closedby="any" aria-labelledby="map-dialog-title">
+        <div class="dialog-header">
+          <div>
+            <h2 id="map-dialog-title">Mapa Brna a rychlý přesun</h2>
+            <p class="dialog-sub">Klikni na mapu pro GPS bod, nebo vyber památku vpravo pro okamžitý přesun.</p>
+          </div>
+          <form method="dialog">
+            <button type="submit" class="btn-close" aria-label="Zavřít mapu Brna">Zavřít</button>
+          </form>
+        </div>
+
+        <div class="map-body">
+          <div class="map-canvas-wrap">
+            <canvas id="full-map-canvas" width="560" height="560" aria-label="Interaktivní mapa celého Brna"></canvas>
+            <p id="map-click-status" class="map-status" role="status" aria-live="polite">
+              Tip: Klikni kamkoliv do mapy pro nastavení GPS trasy, dvojklikem se tam přeneseš.
+            </p>
+          </div>
+          <div class="landmark-list" id="landmark-list" role="list" aria-label="Brněnské lokace k rychlému přesunu"></div>
+        </div>
+      </dialog>
+
+      <!-- PAUSE, SANDBOX SPAWNER & SETTINGS DIALOG -->
+      <dialog id="settings-dialog" class="game-dialog settings-dialog" closedby="any" aria-labelledby="settings-dialog-title">
+        <div class="dialog-header">
+          <div>
+            <h2 id="settings-dialog-title">Menu a nastavení GTA VI: Brno</h2>
+            <p class="dialog-sub">Přistav si vozidlo, přepni denní dobu nebo uprav grafiku a zvuk.</p>
+          </div>
+          <form method="dialog">
+            <button type="submit" class="btn-close" autofocus aria-label="Zpět do hry">Zpět do hry</button>
+          </form>
+        </div>
+
+        <div class="settings-grid">
+          <section class="settings-panel">
+            <h3>Denní doba a atmosféra</h3>
+            <div class="btn-row" role="group" aria-label="Výběr denní doby">
+              <button type="button" class="pill-btn" data-time="sunset">Západ slunce</button>
+              <button type="button" class="pill-btn" data-time="day">11:00 Den</button>
+              <button type="button" class="pill-btn" data-time="night">Neonová noc</button>
+              <button type="button" class="pill-btn" data-time="dawn">Úsvit</button>
+            </div>
+
+            <h3>Přistavit vozidlo (Sandbox)</h3>
+            <div class="btn-row" role="group" aria-label="Přistavit vozidlo vedle hráče">
+              <button type="button" class="pill-btn" data-spawn="supercar">Leonida GT</button>
+              <button type="button" class="pill-btn" data-spawn="octavia">Octavia RS</button>
+              <button type="button" class="pill-btn" data-spawn="police">Policie ČR</button>
+              <button type="button" class="pill-btn" data-spawn="suv">G-Klasa 4x4</button>
+              <button type="button" class="pill-btn" data-spawn="van">Kurýr Starobrno</button>
+              <button type="button" class="pill-btn" data-spawn="classic">Felicia Turbo</button>
+            </div>
+
+            <h3>Rychlé akce</h3>
+            <div class="btn-row">
+              <button type="button" id="btn-clear-wanted" class="pill-btn">Smazat hledanost PČR</button>
+              <button type="button" id="btn-respawn-center" class="pill-btn">Zpět na Svoboďák</button>
+            </div>
+          </section>
+
+          <section class="settings-panel">
+            <h3>Zvuk a grafika</h3>
+            <div class="form-row">
+              <label for="volume-slider">Hlasitost zvuku a rádia</label>
+              <input id="volume-slider" type="range" min="0" max="100" value="45" />
+            </div>
+            <div class="form-row checkbox-row">
+              <input id="shadows-toggle" type="checkbox" checked />
+              <label for="shadows-toggle">Dynamické 3D stíny budov a aut</label>
+            </div>
+
+            <h3>Kompletní ovládání</h3>
+            <table class="controls-table">
+              <caption class="visually-hidden">Přehled klávesových zkratek</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Klávesa</th>
+                  <th scope="col">Akce</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td><kbd>W A S D</kbd> / Šipky</td><td>Chůze nebo řízení vozidla</td></tr>
+                <tr><td><kbd>Myš</kbd> (tažení / <kbd>C</kbd>)</td><td>Otáčení kamery a míření</td></tr>
+                <tr><td><kbd>F</kbd></td><td>Nastoupit / vystoupit z vozidla</td></tr>
+                <tr><td><kbd>E</kbd></td><td>Interakce (Orloj kulička)</td></tr>
+                <tr><td><kbd>Shift</kbd> / <kbd>Space</kbd></td><td>Sprint / Nitro / Skok / Ruční brzda (drift)</td></tr>
+                <tr><td><kbd>1</kbd>–<kbd>4</kbd> + Levý klik</td><td>Výběr zbraně a střelba</td></tr>
+                <tr><td><kbd>R</kbd> / <kbd>H</kbd></td><td>Přepnout rádio / Klakson nebo PČR siréna</td></tr>
+                <tr><td><kbd>M</kbd> / <kbd>P</kbd> / <kbd>T</kbd></td><td>Mapa Brna / Menu / Denní doba</td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </dialog>
+    </main>
+
+  </body>
+</html>
