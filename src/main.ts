@@ -1,5 +1,6 @@
 import './style.css';
 import { BRNO_LANDMARKS, GameHUDState, TimePreset, VehicleKind, WeaponId } from './game/types';
+import { loadBrnoOSMData } from './game/osm';
 import { BannerEvent, BrnoGameEngine } from './game/engine';
 
 // DOM references
@@ -7,6 +8,11 @@ const mount = document.getElementById('canvas-mount') as HTMLDivElement;
 const startScreen = document.getElementById('start-screen') as HTMLElement;
 const hud = document.getElementById('hud') as HTMLDivElement;
 const crosshair = document.getElementById('crosshair') as HTMLDivElement;
+const loadStatus = document.getElementById('load-status') as HTMLParagraphElement;
+
+const btnPlay = document.getElementById('btn-play') as HTMLButtonElement;
+const btnStartMap = document.getElementById('btn-start-map') as HTMLButtonElement;
+const btnStartControls = document.getElementById('btn-start-controls') as HTMLButtonElement;
 
 const hudMinimap = document.getElementById('minimap-canvas') as HTMLCanvasElement;
 const fullMapCanvas = document.getElementById('full-map-canvas') as HTMLCanvasElement;
@@ -19,6 +25,7 @@ const mapClickStatus = document.getElementById('map-click-status') as HTMLParagr
 // HUD fields
 const elWanted = document.getElementById('hud-wanted') as HTMLDivElement;
 const elMoney = document.getElementById('hud-money') as HTMLDivElement;
+const elStreet = document.getElementById('hud-street') as HTMLDivElement;
 const elDistrict = document.getElementById('hud-district') as HTMLSpanElement;
 const elClock = document.getElementById('hud-clock') as HTMLSpanElement;
 const elWeaponName = document.getElementById('hud-weapon-name') as HTMLSpanElement;
@@ -42,6 +49,7 @@ const elBanner = document.getElementById('event-banner') as HTMLDivElement;
 const elBannerTitle = document.getElementById('banner-title') as HTMLElement;
 const elBannerSubtitle = document.getElementById('banner-subtitle') as HTMLSpanElement;
 
+let engine: BrnoGameEngine | null = null;
 let bannerTimeout = 0;
 
 function showBanner(ev: BannerEvent): void {
@@ -59,6 +67,7 @@ function updateHUD(state: GameHUDState): void {
   elWanted.textContent = state.wanted > 0 ? '★'.repeat(state.wanted) : '';
   elWanted.classList.toggle('chasing', state.wanted > 0);
   elMoney.textContent = `${state.money.toLocaleString('cs-CZ')} Kč`;
+  elStreet.textContent = state.streetName;
   elDistrict.textContent = state.district;
   elClock.textContent = state.gameTimeStr;
 
@@ -78,7 +87,10 @@ function updateHUD(state: GameHUDState): void {
     btn.setAttribute('aria-pressed', String(btn.dataset.weapon === state.weaponId));
   });
 
-  crosshair.classList.toggle('active', !state.inVehicle && state.weaponId !== 'fists' && engine.started && !engine.paused);
+  crosshair.classList.toggle(
+    'active',
+    Boolean(engine && !state.inVehicle && state.weaponId !== 'fists' && engine.started && !engine.paused)
+  );
 
   if (state.promptText) {
     elPrompt.textContent = state.promptText;
@@ -96,9 +108,7 @@ function updateHUD(state: GameHUDState): void {
   }
 }
 
-const engine = new BrnoGameEngine(mount, hudMinimap, fullMapCanvas, updateHUD, showBanner);
-
-// Fallback for browsers without native <dialog closedby="any"> light-dismiss (per Modern Web Guidance)
+// Fallback for browsers without native <dialog closedby="any"> light-dismiss
 if (!('closedBy' in HTMLDialogElement.prototype)) {
   const isOutside = (e: PointerEvent, dialog: HTMLDialogElement) => {
     const r = dialog.getBoundingClientRect();
@@ -110,34 +120,32 @@ if (!('closedBy' in HTMLDialogElement.prototype)) {
       pressedOutside = isOutside(e, dlg);
     });
     dlg.addEventListener('pointerup', (e) => {
-      if (pressedOutside && isOutside(e, dlg)) {
-        dlg.close();
-      }
+      if (pressedOutside && isOutside(e, dlg)) dlg.close();
     });
   }
 }
 
 function openMapDialog(): void {
-  if (mapDialog.open) return;
+  if (!engine || mapDialog.open) return;
   if (engine.started) engine.setPaused(true);
   engine.renderFullMapModal();
   mapDialog.showModal();
 }
 
 function openSettingsDialog(): void {
-  if (settingsDialog.open) return;
+  if (!engine || settingsDialog.open) return;
   if (engine.started) engine.setPaused(true);
   settingsDialog.showModal();
 }
 
 mapDialog.addEventListener('close', () => {
   mapDialog.returnValue = '';
-  if (engine.started && !settingsDialog.open) engine.setPaused(false);
+  if (engine && engine.started && !settingsDialog.open) engine.setPaused(false);
 });
 
 settingsDialog.addEventListener('close', () => {
   settingsDialog.returnValue = '';
-  if (engine.started && !mapDialog.open) engine.setPaused(false);
+  if (engine && engine.started && !mapDialog.open) engine.setPaused(false);
 });
 
 // Populate Brno Landmarks in Full Map Dialog
@@ -153,6 +161,7 @@ BRNO_LANDMARKS.forEach((lm) => {
     <span class="landmark-dot" style="background:${lm.color}" aria-hidden="true"></span>
   `;
   btn.addEventListener('click', () => {
+    if (!engine) return;
     if (!engine.started) {
       startScreen.hidden = true;
       hud.hidden = false;
@@ -164,8 +173,8 @@ BRNO_LANDMARKS.forEach((lm) => {
   landmarkList.appendChild(btn);
 });
 
-// Interactive Map Canvas click (GPS) & double-click (Fast Travel)
 fullMapCanvas.addEventListener('click', (e) => {
+  if (!engine) return;
   const rect = fullMapCanvas.getBoundingClientRect();
   const cx = ((e.clientX - rect.left) / rect.width) * fullMapCanvas.width;
   const cy = ((e.clientY - rect.top) / rect.height) * fullMapCanvas.height;
@@ -175,6 +184,7 @@ fullMapCanvas.addEventListener('click', (e) => {
 });
 
 fullMapCanvas.addEventListener('dblclick', (e) => {
+  if (!engine) return;
   const rect = fullMapCanvas.getBoundingClientRect();
   const cx = ((e.clientX - rect.left) / rect.width) * fullMapCanvas.width;
   const cy = ((e.clientY - rect.top) / rect.height) * fullMapCanvas.height;
@@ -187,23 +197,23 @@ fullMapCanvas.addEventListener('dblclick', (e) => {
   mapDialog.close();
 });
 
-// Start screen buttons
-document.getElementById('btn-play')!.addEventListener('click', () => {
+btnPlay.addEventListener('click', () => {
+  if (!engine) return;
   startScreen.hidden = true;
   hud.hidden = false;
   engine.startGame();
 });
-document.getElementById('btn-start-map')!.addEventListener('click', openMapDialog);
-document.getElementById('btn-start-controls')!.addEventListener('click', openSettingsDialog);
+btnStartMap.addEventListener('click', openMapDialog);
+btnStartControls.addEventListener('click', openSettingsDialog);
 
-// HUD Toolbar buttons
 document.getElementById('btn-hud-map')!.addEventListener('click', openMapDialog);
 document.getElementById('btn-hud-menu')!.addEventListener('click', openSettingsDialog);
-document.getElementById('btn-hud-time')!.addEventListener('click', () => engine.cycleTimePreset());
-document.getElementById('btn-hud-lock')!.addEventListener('click', () => engine.requestPointerLock());
+document.getElementById('btn-hud-time')!.addEventListener('click', () => engine?.cycleTimePreset());
+document.getElementById('btn-hud-lock')!.addEventListener('click', () => engine?.requestPointerLock());
 
 const btnAudio = document.getElementById('btn-hud-audio') as HTMLButtonElement;
 btnAudio.addEventListener('click', () => {
+  if (!engine) return;
   engine.audio.unlock();
   const nextMuted = !engine.audio.isMuted();
   engine.audio.setMuted(nextMuted);
@@ -212,11 +222,11 @@ btnAudio.addEventListener('click', () => {
 });
 
 document.getElementById('btn-radio-next')!.addEventListener('click', () => {
+  if (!engine) return;
   const name = engine.audio.nextRadio();
   showBanner({ title: name, subtitle: 'Naladěno rádio', accent: 'cyan' });
 });
 
-// Weapon click slots
 document.querySelectorAll<HTMLButtonElement>('.weapon-slot').forEach((btn) => {
   btn.addEventListener('click', () => {
     const wid = btn.dataset.weapon as WeaponId;
@@ -224,16 +234,16 @@ document.querySelectorAll<HTMLButtonElement>('.weapon-slot').forEach((btn) => {
   });
 });
 
-// Settings modal controls
 document.querySelectorAll<HTMLButtonElement>('[data-time]').forEach((btn) => {
   btn.addEventListener('click', () => {
-    engine.setTimePreset(btn.dataset.time as TimePreset);
+    engine?.setTimePreset(btn.dataset.time as TimePreset);
     showBanner({ title: btn.textContent ?? 'Čas upraven', subtitle: 'Atmosféra Brna změněna', accent: 'gold' });
   });
 });
 
 document.querySelectorAll<HTMLButtonElement>('[data-spawn]').forEach((btn) => {
   btn.addEventListener('click', () => {
+    if (!engine) return;
     if (!engine.started) {
       startScreen.hidden = true;
       hud.hidden = false;
@@ -245,27 +255,27 @@ document.querySelectorAll<HTMLButtonElement>('[data-spawn]').forEach((btn) => {
 });
 
 document.getElementById('btn-clear-wanted')!.addEventListener('click', () => {
-  engine.clearWanted();
+  engine?.clearWanted();
   settingsDialog.close();
 });
 
 document.getElementById('btn-respawn-center')!.addEventListener('click', () => {
-  engine.fastTravelTo(0, 14, 'Náměstí Svobody');
+  engine?.fastTravelTo(-2, 12, 'Náměstí Svobody');
   settingsDialog.close();
 });
 
 const volumeSlider = document.getElementById('volume-slider') as HTMLInputElement;
 volumeSlider.addEventListener('input', () => {
+  if (!engine) return;
   engine.audio.unlock();
   engine.audio.setVolume(Number(volumeSlider.value) / 100);
 });
 
 const shadowsToggle = document.getElementById('shadows-toggle') as HTMLInputElement;
 shadowsToggle.addEventListener('change', () => {
-  engine.setShadowsEnabled(shadowsToggle.checked);
+  engine?.setShadowsEnabled(shadowsToggle.checked);
 });
 
-// Global hotkeys M (Map) & P (Pause/Menu)
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
   if (e.code === 'KeyM') {
@@ -277,7 +287,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// Touch Controls Joystick & Buttons
+// Touch Controls
 const stickBase = document.getElementById('touch-stick-base') as HTMLDivElement;
 const stickKnob = document.getElementById('touch-stick-knob') as HTMLDivElement;
 let stickPointerId: number | null = null;
@@ -294,7 +304,7 @@ const releaseStick = (e: PointerEvent) => {
   if (e.pointerId === stickPointerId) {
     stickPointerId = null;
     stickKnob.style.transform = 'translate(-50%, -50%)';
-    engine.setTouchMove(0, 0);
+    engine?.setTouchMove(0, 0);
   }
 };
 stickBase.addEventListener('pointerup', releaseStick);
@@ -313,17 +323,35 @@ function updateStick(e: PointerEvent): void {
     dy = (dy / dist) * maxR;
   }
   stickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-  engine.setTouchMove(dx / maxR, dy / maxR);
+  engine?.setTouchMove(dx / maxR, dy / maxR);
 }
 
-document.getElementById('tbtn-enter')!.addEventListener('click', () => engine.toggleVehicle());
-document.getElementById('tbtn-interact')!.addEventListener('click', () => engine.triggerInteract());
+document.getElementById('tbtn-enter')!.addEventListener('click', () => engine?.toggleVehicle());
+document.getElementById('tbtn-interact')!.addEventListener('click', () => engine?.triggerInteract());
 
 const bindHold = (id: string, action: 'sprint' | 'shoot') => {
   const el = document.getElementById(id)!;
-  el.addEventListener('pointerdown', () => engine.setTouchAction(action, true));
-  el.addEventListener('pointerup', () => engine.setTouchAction(action, false));
-  el.addEventListener('pointercancel', () => engine.setTouchAction(action, false));
+  el.addEventListener('pointerdown', () => engine?.setTouchAction(action, true));
+  el.addEventListener('pointerup', () => engine?.setTouchAction(action, false));
+  el.addEventListener('pointercancel', () => engine?.setTouchAction(action, false));
 };
 bindHold('tbtn-sprint', 'sprint');
 bindHold('tbtn-shoot', 'shoot');
+
+// Bootstrap 1:1 Brno OpenStreetMap world!
+(async function init() {
+  try {
+    const osm = await loadBrnoOSMData();
+    const streetCount = new Set(osm.roads.map(r => r.n).filter(Boolean)).size;
+    engine = new BrnoGameEngine(mount, hudMinimap, fullMapCanvas, osm, updateHUD, showBanner);
+    btnPlay.disabled = false;
+    btnStartMap.disabled = false;
+    btnStartControls.disabled = false;
+    btnPlay.textContent = 'Vyrazit do Brna (1:1)';
+    loadStatus.textContent = `Mapa připravena: ${streetCount} reálných ulic, ${osm.buildings.length.toLocaleString('cs-CZ')} budov, ${osm.trams.length} kolejových úseků.`;
+  } catch (err) {
+    loadStatus.classList.add('error');
+    loadStatus.textContent = `Chyba načítání 3D mapy Brna: ${err instanceof Error ? err.message : String(err)}. Zkontroluj podporu WebGL a obnov stránku.`;
+    btnPlay.textContent = 'Načítání selhalo';
+  }
+})();

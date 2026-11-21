@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WEAPON_SPECS, WeaponId, WORLD_HALF } from './types';
+import { WEAPON_SPECS, WeaponId, WORLD_BOUNDS } from './types';
 import { BrnoWorld } from './world';
 import { Vehicle } from './vehicles';
 
@@ -45,9 +45,10 @@ export class PlayerAndNPCSystem {
   private armR!: THREE.Mesh;
   private gunMesh!: THREE.Mesh;
 
-  public x = 0;
+  // Start right on real Náměstí Svobody facing Brněnský orloj!
+  public x = -2;
   public y = 0;
-  public z = 14;
+  public z = 12;
   public vy = 0;
   public yaw = Math.PI;
   public grounded = true;
@@ -70,6 +71,7 @@ export class PlayerAndNPCSystem {
 
   constructor(world: BrnoWorld) {
     this.world = world;
+    this.y = world.getSurfaceHeight(this.x, this.z).y;
     this.playerMesh = this.buildCharacterMesh(0xff2e7e, 0x1e293b, 0xf1c27d, true);
     this.playerMesh.position.set(this.x, this.y, this.z);
     this.group.add(this.playerMesh);
@@ -139,20 +141,22 @@ export class PlayerAndNPCSystem {
 
   private spawnAmbientPeds(): void {
     const zones: Array<[number, number, number]> = [
-      [0, 0, 12],          // Náměstí Svobody
-      [-22, 110, 9],       // Zelný trh
-      [20, -120, 8],       // Moravské náměstí
-      [20, 232, 8],        // Hlavní nádraží
-      [40, -275, 7],       // Park Lužánky
-      [-212, -25, 5]       // Hrad Špilberk tourists
+      [-2, 0, 14],          // Náměstí Svobody
+      [33, 295, 10],        // Zelný trh
+      [-31, -333, 9],       // Moravské náměstí
+      [295, 465, 9],        // Hlavní nádraží
+      [-109, -1000, 8],     // Park Lužánky
+      [-666, 84, 6],        // Hrad Špilberk
+      [-1082, 584, 6]       // Mendlovo náměstí
     ];
     const shirts = [0x38bdf8, 0xf59e0b, 0x10b981, 0xa78bfa, 0xf8fafc, 0xf43f5e, 0x64748b];
     const pants = [0x1e293b, 0x334155, 0x1e3a5f, 0x292524];
 
     for (const [zx, zz, count] of zones) {
       for (let i = 0; i < count; i++) {
-        const px = zx + (Math.random() - 0.5) * 44;
-        const pz = zz + (Math.random() - 0.5) * 44;
+        const px = zx + (Math.random() - 0.5) * 42;
+        const pz = zz + (Math.random() - 0.5) * 42;
+        if (this.world.spatial.hitsBuilding(px, 2, pz)) continue;
         this.spawnPed(
           px,
           pz,
@@ -236,7 +240,6 @@ export class PlayerAndNPCSystem {
     const inputLen = Math.hypot(moveX, moveZ);
 
     if (inputLen > 0.05) {
-      // Camera-relative movement direction
       const fwdX = -Math.sin(cameraYaw);
       const fwdZ = -Math.cos(cameraYaw);
       const rightX = Math.cos(cameraYaw);
@@ -248,29 +251,13 @@ export class PlayerAndNPCSystem {
       const dirX = wx / len;
       const dirZ = wz / len;
 
-      const moveSpeed = sprint ? 11.2 : 6.2;
-      let nextX = THREE.MathUtils.clamp(this.x + dirX * moveSpeed * clampedDt, -WORLD_HALF + 8, WORLD_HALF - 8);
-      let nextZ = THREE.MathUtils.clamp(this.z + dirZ * moveSpeed * clampedDt, -WORLD_HALF + 8, WORLD_HALF - 8);
+      const moveSpeed = sprint ? 11.5 : 6.2;
+      const nextX = THREE.MathUtils.clamp(this.x + dirX * moveSpeed * clampedDt, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
+      const nextZ = THREE.MathUtils.clamp(this.z + dirZ * moveSpeed * clampedDt, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
 
-      // Building AABB resolution for player
-      const rad = 0.55;
-      for (const box of this.world.colliders) {
-        if (this.y > box.maxY + 0.2 || this.y + 1.9 < box.minY) continue;
-        if (nextX + rad > box.minX && nextX - rad < box.maxX && nextZ + rad > box.minZ && nextZ - rad < box.maxZ) {
-          const pL = Math.abs((nextX + rad) - box.minX);
-          const pR = Math.abs(box.maxX - (nextX - rad));
-          const pT = Math.abs((nextZ + rad) - box.minZ);
-          const pB = Math.abs(box.maxZ - (nextZ - rad));
-          const m = Math.min(pL, pR, pT, pB);
-          if (m === pL) nextX = box.minX - rad;
-          else if (m === pR) nextX = box.maxX + rad;
-          else if (m === pT) nextZ = box.minZ - rad;
-          else nextZ = box.maxZ + rad;
-        }
-      }
-
-      this.x = nextX;
-      this.z = nextZ;
+      const res = this.world.spatial.resolveCircleCollision(nextX, this.y, nextZ, 0.55);
+      this.x = res.x;
+      this.z = res.z;
 
       const targetYaw = Math.atan2(dirX, dirZ);
       let diff = targetYaw - this.yaw;
@@ -278,7 +265,6 @@ export class PlayerAndNPCSystem {
       while (diff < -Math.PI) diff += Math.PI * 2;
       this.yaw += diff * Math.min(1, clampedDt * 12);
 
-      // Walk cycle animation
       this.walkPhase += clampedDt * (sprint ? 14 : 9);
       const swing = Math.sin(this.walkPhase) * (sprint ? 0.85 : 0.55);
       this.legL.rotation.x = swing;
@@ -292,7 +278,6 @@ export class PlayerAndNPCSystem {
       this.armR.rotation.x = THREE.MathUtils.lerp(this.armR.rotation.x, this.weaponId === 'fists' ? 0 : -0.85, clampedDt * 10);
     }
 
-    // Gravity & Jump
     const surf = this.world.getSurfaceHeight(this.x, this.z);
     if (jump && this.grounded) {
       this.vy = 8.4;
@@ -329,17 +314,13 @@ export class PlayerAndNPCSystem {
     if (this.weaponId !== 'fists' && this.ammo[this.weaponId] <= 0) return false;
 
     this.fireCooldown = 1 / spec.fireRate;
-    if (this.weaponId !== 'fists') {
-      this.ammo[this.weaponId]--;
-    }
+    if (this.weaponId !== 'fists') this.ammo[this.weaponId]--;
 
-    // Face aim direction
     this.yaw = Math.atan2(aimDir.x, aimDir.z);
 
     if (this.weaponId === 'fists') {
       this.armR.rotation.x = -1.6;
       callbacks.onShot(false);
-      // Melee check
       for (const ped of this.peds) {
         if (!ped.alive) continue;
         if (Math.hypot(ped.x - this.x, ped.z - this.z) < spec.range) {
@@ -349,7 +330,6 @@ export class PlayerAndNPCSystem {
       return true;
     }
 
-    // Spawn visible tracer or rocket projectile
     const isRPG = Boolean(spec.explosive);
     const speed = isRPG ? 46 : 115;
     const sx = this.x + aimDir.x * 0.9;
@@ -384,7 +364,6 @@ export class PlayerAndNPCSystem {
 
     callbacks.onShot(isRPG);
     callbacks.onMuzzleFlash(sx, sy, sz);
-    // Panic nearby civilians
     this.triggerPanic(this.x, this.z, 36);
     if (isRPG) callbacks.onCrime(2);
     return true;
@@ -393,9 +372,7 @@ export class PlayerAndNPCSystem {
   public triggerPanic(cx: number, cz: number, radius: number): void {
     for (const p of this.peds) {
       if (!p.alive || p.hostile) continue;
-      if (Math.hypot(p.x - cx, p.z - cz) < radius) {
-        p.panicTimer = 7.5;
-      }
+      if (Math.hypot(p.x - cx, p.z - cz) < radius) p.panicTimer = 7.5;
     }
   }
 
@@ -425,7 +402,6 @@ export class PlayerAndNPCSystem {
   ): void {
     const clampedDt = Math.min(dt, 0.05);
 
-    // 1. Update Projectiles
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const pr = this.projectiles[i];
       pr.life -= clampedDt;
@@ -437,18 +413,8 @@ export class PlayerAndNPCSystem {
       let hit = pr.life <= 0;
       const groundY = this.world.getSurfaceHeight(pr.x, pr.z).y;
       if (pr.y <= groundY + 0.15) hit = true;
+      if (!hit && this.world.spatial.hitsBuilding(pr.x, pr.y, pr.z)) hit = true;
 
-      // Building hit
-      if (!hit) {
-        for (const box of this.world.colliders) {
-          if (pr.x >= box.minX && pr.x <= box.maxX && pr.y >= box.minY && pr.y <= box.maxY && pr.z >= box.minZ && pr.z <= box.maxZ) {
-            hit = true;
-            break;
-          }
-        }
-      }
-
-      // Ped hit
       if (!hit && pr.fromPlayer) {
         for (const ped of this.peds) {
           if (!ped.alive) continue;
@@ -463,21 +429,18 @@ export class PlayerAndNPCSystem {
         }
       }
 
-      // Vehicle hit
       if (!hit && pr.fromPlayer) {
         for (const v of vehicles) {
           if (v.isPlayer) continue;
           if (Math.hypot(pr.x - v.x, pr.z - v.z) < v.spec.length * 0.5 && Math.abs(pr.y - (v.y + 1.0)) < 1.3) {
             v.health -= pr.damage * 0.45;
-            if (v.spec.isPolice) callbacks.onCrime(2);
-            else callbacks.onCrime(1);
+            callbacks.onCrime(v.spec.isPolice ? 2 : 1);
             hit = true;
             break;
           }
         }
       }
 
-      // Enemy bullet hitting player
       if (!hit && !pr.fromPlayer) {
         if (Math.hypot(pr.x - playerX, pr.z - playerZ) < 1.1 && Math.abs(pr.y - (playerY + 1.1)) < 1.4) {
           callbacks.onPlayerHit(pr.damage);
@@ -489,7 +452,6 @@ export class PlayerAndNPCSystem {
         if (pr.explosive) {
           callbacks.onExplosion(pr.x, Math.max(groundY + 0.5, pr.y), pr.z);
           this.triggerPanic(pr.x, pr.z, 55);
-          // Blast force on nearby vehicles & NPCs!
           for (const v of vehicles) {
             const d = Math.hypot(v.x - pr.x, v.z - pr.z);
             if (d < 15) {
@@ -515,15 +477,13 @@ export class PlayerAndNPCSystem {
       }
     }
 
-    // 2. Update Pedestrians & Hostile NPCs
     for (const ped of this.peds) {
       if (!ped.alive) continue;
       const distToPlayer = Math.hypot(ped.x - playerX, ped.z - playerZ);
+      if (distToPlayer > 220 && !ped.hostile) continue; // Save CPU for far peds in 2.8km city!
 
       if (ped.hostile) {
-        // Aim and engage player within 55m
-        const targetYaw = Math.atan2(playerX - ped.x, playerZ - ped.z);
-        ped.yaw = targetYaw;
+        ped.yaw = Math.atan2(playerX - ped.x, playerZ - ped.z);
         if (distToPlayer > 14 && distToPlayer < 65) {
           ped.x += Math.sin(ped.yaw) * ped.speed * clampedDt;
           ped.z += Math.cos(ped.yaw) * ped.speed * clampedDt;
@@ -569,9 +529,9 @@ export class PlayerAndNPCSystem {
         }
       }
 
-      // Keep inside Brno bounds
-      ped.x = THREE.MathUtils.clamp(ped.x, -360, 320);
-      ped.z = THREE.MathUtils.clamp(ped.z, -330, 325);
+      const res = this.world.spatial.resolveCircleCollision(ped.x, ped.y, ped.z, 0.5);
+      ped.x = THREE.MathUtils.clamp(res.x, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
+      ped.z = THREE.MathUtils.clamp(res.z, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
       ped.y = this.world.getSurfaceHeight(ped.x, ped.z).y;
       ped.mesh.position.set(ped.x, ped.y, ped.z);
       ped.mesh.rotation.y = ped.yaw;
@@ -581,7 +541,6 @@ export class PlayerAndNPCSystem {
       ped.legL.rotation.x = Math.sin(phase) * amp;
       ped.legR.rotation.x = -Math.sin(phase) * amp;
 
-      // Vehicle hitting pedestrian
       for (const v of vehicles) {
         if (Math.abs(v.speed) < 5) continue;
         if (Math.hypot(v.x - ped.x, v.z - ped.z) < 2.2) {

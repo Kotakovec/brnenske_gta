@@ -1,15 +1,13 @@
 import * as THREE from 'three';
 import {
-  AABB,
-  ROAD_X,
-  ROAD_Z,
   VEHICLE_SPECS,
   VehicleKind,
   VehicleSpec,
-  WORLD_HALF
+  WORLD_BOUNDS
 } from './types';
 import { BrnoTextures } from './textures';
 import { BrnoWorld } from './world';
+import { OSMRoad } from './osm';
 
 export interface Vehicle {
   id: number;
@@ -38,7 +36,8 @@ export interface Vehicle {
   isAI: boolean;
   isPoliceChaser: boolean;
   sirenOn: boolean;
-  aiAxis: 'x' | 'z';
+  aiRoad?: OSMRoad;
+  aiPointIdx: number;
   aiDir: 1 | -1;
   aiSpeed: number;
   airTime: number;
@@ -98,7 +97,6 @@ export function createVehicleMesh(
   const l = spec.length;
   const h = spec.height;
 
-  // Lower chassis
   const chassisH = h * (spec.kind === 'van' ? 0.68 : 0.48);
   const chassisGeo = new THREE.BoxGeometry(w, chassisH, l);
   const chassisMats = spec.isPolice
@@ -110,7 +108,6 @@ export function createVehicleMesh(
   chassis.receiveShadow = true;
   bodyGroup.add(chassis);
 
-  // Upper cabin
   const cabLen = spec.kind === 'van' ? l * 0.85 : spec.kind === 'supercar' ? l * 0.48 : l * 0.55;
   const cabH = h * (spec.kind === 'van' ? 0.4 : 0.46);
   const cabZ = spec.kind === 'van' ? 0 : spec.kind === 'supercar' ? -0.18 : -0.12;
@@ -119,12 +116,10 @@ export function createVehicleMesh(
   cabin.castShadow = true;
   bodyGroup.add(cabin);
 
-  // Roof cap
   const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 0.84, 0.12, cabLen * 0.9), bodyMat);
   roof.position.set(0, 0.42 + chassisH + cabH * 0.92, cabZ);
   bodyGroup.add(roof);
 
-  // Supercar rear spoiler & neon underglow
   let underglow: THREE.MeshBasicMaterial | undefined;
   if (spec.kind === 'supercar') {
     const wing = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, 0.1, 0.42), trimMat);
@@ -147,7 +142,6 @@ export function createVehicleMesh(
     mesh.add(glowPlane);
   }
 
-  // Policie ČR flashing lightbar
   let lightbarRed: THREE.MeshBasicMaterial | undefined;
   let lightbarBlue: THREE.MeshBasicMaterial | undefined;
   if (spec.isPolice) {
@@ -161,7 +155,6 @@ export function createVehicleMesh(
     bodyGroup.add(bLeft, bRight);
   }
 
-  // Headlights & Taillights
   const headMat = new THREE.MeshBasicMaterial({ color: 0xfef9c3 });
   const brakeLights = new THREE.MeshBasicMaterial({ color: 0x991b1b });
   for (const sx of [-w * 0.34, w * 0.34]) {
@@ -172,13 +165,11 @@ export function createVehicleMesh(
     bodyGroup.add(hl, tl);
   }
 
-  // Czech License Plates (1B2 = South Moravia / Brno!)
   const plateMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
   const plateRear = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.14, 0.05), plateMat);
   plateRear.position.set(0, 0.55, -l * 0.5 - 0.02);
   bodyGroup.add(plateRear);
 
-  // 4 Wheels
   const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 12);
   wheelGeo.rotateZ(Math.PI / 2);
   const tireMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.9 });
@@ -220,7 +211,7 @@ export class VehicleManager {
     x: number,
     z: number,
     yaw = 0,
-    options?: { isAI?: boolean; isPoliceChaser?: boolean; color?: number }
+    options?: { isAI?: boolean; isPoliceChaser?: boolean; color?: number; aiRoad?: OSMRoad; aiPointIdx?: number }
   ): Vehicle {
     const spec = VEHICLE_SPECS[kind];
     const built = createVehicleMesh(spec, this.textures, options?.color);
@@ -257,9 +248,10 @@ export class VehicleManager {
       isAI: options?.isAI ?? false,
       isPoliceChaser: options?.isPoliceChaser ?? false,
       sirenOn: options?.isPoliceChaser ?? false,
-      aiAxis: Math.abs(Math.sin(yaw)) > 0.5 ? 'x' : 'z',
-      aiDir: (Math.sin(yaw) + Math.cos(yaw)) >= 0 ? 1 : -1,
-      aiSpeed: 10 + Math.random() * 6,
+      aiRoad: options?.aiRoad,
+      aiPointIdx: options?.aiPointIdx ?? 0,
+      aiDir: 1,
+      aiSpeed: 10 + Math.random() * 8,
       airTime: 0,
       stuntStartX: x,
       stuntStartZ: z,
@@ -270,54 +262,43 @@ export class VehicleManager {
   }
 
   private spawnInitialFleet(): void {
-    // Parked hero cars around Brno landmarks for instant stealing/driving!
-    this.spawnVehicle('supercar', 20, -14, Math.PI, { color: 0xff2e7e });       // Right at Náměstí Svobody!
-    this.spawnVehicle('octavia', -42, 22, 0, { color: 0x10b981 });              // Svoboďák west
-    this.spawnVehicle('police', 34, -104, Math.PI * 0.5);                        // Moravské náměstí PČR patrol
-    this.spawnVehicle('suv', 130, -130, Math.PI, { color: 0x181c28 });           // Janáčkovo divadlo
-    this.spawnVehicle('supercar', 194, 240, -Math.PI * 0.5, { color: 0x06b6d4 }); // AZ Tower cyber-cyan supercar
-    this.spawnVehicle('classic', -36, 98, Math.PI * 0.35, { color: 0xf59e0b });  // Zelný trh Felicia
-    this.spawnVehicle('van', 42, 220, -Math.PI * 0.5);                           // Hlavní nádraží Starobrno van
-    this.spawnVehicle('supercar', -290, 145, 0, { color: 0xa855f7 });            // BVV drift car
-    this.spawnVehicle('suv', -204, -22, Math.PI * 0.5, { color: 0xdc2626 });     // Hrad Špilberk courtyard SUV
+    // Hero parked vehicles right on real 1:1 Brno plazas & streets!
+    this.spawnVehicle('supercar', 8, 12, Math.PI, { color: 0xff2e7e });           // Náměstí Svobody right by player!
+    this.spawnVehicle('octavia', -16, 16, 0.3, { color: 0x10b981 });              // Náměstí Svobody west
+    this.spawnVehicle('police', -35, -315, Math.PI * 0.5);                        // Moravské náměstí PČR patrol
+    this.spawnVehicle('suv', 275, -326, Math.PI, { color: 0x181c28 });            // Janáčkovo divadlo
+    this.spawnVehicle('supercar', -83, 1380, 0, { color: 0x06b6d4 });             // AZ Tower Heršpická supercar
+    this.spawnVehicle('classic', 26, 286, 0.2, { color: 0xf59e0b });              // Zelný trh Felicia
+    this.spawnVehicle('van', 295, 465, -Math.PI * 0.4);                           // Hlavní nádraží Starobrno van
+    this.spawnVehicle('supercar', -1082, 584, 0, { color: 0xa855f7 });            // Mendlovo náměstí
+    this.spawnVehicle('suv', -666, 84, Math.PI * 0.5, { color: 0xdc2626 });       // Hrad Špilberk courtyard
 
-    // Ambient AI traffic patrolling Brno avenues
+    // Spawn 28 AI Traffic cars driving directly along REAL 1:1 OSM Brno streets!
+    const roads = this.world.spatial.drivableRoads.filter(r => r.p.length >= 8);
     const trafficKinds: VehicleKind[] = ['octavia', 'classic', 'suv', 'van', 'octavia', 'supercar'];
     const trafficColors = [0xe2e8f0, 0x3b82f6, 0xef4444, 0x10b981, 0xf59e0b, 0x6366f1, 0x475569];
 
-    let idx = 0;
-    for (const rx of [-140, 20, 130, 240]) {
-      for (let i = 0; i < 3; i++) {
-        const dir: 1 | -1 = i % 2 === 0 ? 1 : -1;
-        const laneX = rx + (dir === 1 ? -3.4 : 3.4);
-        const lz = -170 + i * 145 + (Math.random() - 0.5) * 35;
-        const v = this.spawnVehicle(
-          trafficKinds[idx % trafficKinds.length],
-          laneX,
-          lz,
-          dir === 1 ? 0 : Math.PI,
-          { isAI: true, color: trafficColors[idx % trafficColors.length] }
+    if (roads.length > 0) {
+      const step = Math.max(1, Math.floor(roads.length / 28));
+      let spawned = 0;
+      for (let i = 0; i < roads.length && spawned < 28; i += step) {
+        const road = roads[i];
+        const x1 = road.p[0], z1 = road.p[1];
+        const x2 = road.p[2], z2 = road.p[3];
+        const yaw = Math.atan2(x2 - x1, z2 - z1);
+        this.spawnVehicle(
+          trafficKinds[spawned % trafficKinds.length],
+          x1,
+          z1,
+          yaw,
+          {
+            isAI: true,
+            color: trafficColors[spawned % trafficColors.length],
+            aiRoad: road,
+            aiPointIdx: 1
+          }
         );
-        v.aiAxis = 'z';
-        v.aiDir = dir;
-        idx++;
-      }
-    }
-    for (const rz of [-110, 110, 220, 310]) {
-      for (let i = 0; i < 2; i++) {
-        const dir: 1 | -1 = i % 2 === 0 ? 1 : -1;
-        const laneZ = rz + (dir === 1 ? 3.4 : -3.4);
-        const lx = -120 + i * 210 + (Math.random() - 0.5) * 40;
-        const v = this.spawnVehicle(
-          trafficKinds[idx % trafficKinds.length],
-          lx,
-          laneZ,
-          dir === 1 ? Math.PI * 0.5 : -Math.PI * 0.5,
-          { isAI: true, color: trafficColors[idx % trafficColors.length] }
-        );
-        v.aiAxis = 'x';
-        v.aiDir = dir;
-        idx++;
+        spawned++;
       }
     }
   }
@@ -330,26 +311,17 @@ export class VehicleManager {
       for (const cop of active) {
         cop.isPoliceChaser = false;
         cop.sirenOn = false;
-        cop.isAI = true;
       }
       return;
     }
 
     if (active.length < desired) {
-      // Spawn PČR cruiser ~90m away on nearest road
-      const angle = Math.random() * Math.PI * 2;
-      let sx = Math.max(-310, Math.min(280, playerX + Math.cos(angle) * 95));
-      let sz = Math.max(-220, Math.min(305, playerZ + Math.sin(angle) * 95));
-      // Snap to nearest road X
-      let nearestRx: number = ROAD_X[3];
-      let bestD = Infinity;
-      for (const rx of ROAD_X) {
-        const d = Math.abs(rx - sx);
-        if (d < bestD) { bestD = d; nearestRx = rx; }
-      }
-      sx = nearestRx;
-      const yaw = Math.atan2(playerX - sx, playerZ - sz);
-      this.spawnVehicle('police', sx, sz, yaw, { isPoliceChaser: true });
+      const sp = this.world.spatial.getNearestRoadSpawn(
+        playerX + (Math.random() - 0.5) * 180,
+        playerZ + (Math.random() - 0.5) * 180,
+        95
+      );
+      this.spawnVehicle('police', sp.x, sp.z, sp.yaw, { isPoliceChaser: true });
     }
   }
 
@@ -357,8 +329,7 @@ export class VehicleManager {
     v.health = v.maxHealth;
     if (!v.spec.isPolice) {
       const palette = [0xff2e7e, 0x06b6d4, 0x10b981, 0xf59e0b, 0x8b5cf6, 0xf43f5e, 0xf8fafc];
-      const next = palette[Math.floor(Math.random() * palette.length)];
-      v.bodyMat.color.setHex(next);
+      v.bodyMat.color.setHex(palette[Math.floor(Math.random() * palette.length)]);
     }
   }
 
@@ -379,7 +350,6 @@ export class VehicleManager {
     const clampedDt = Math.min(dt, 0.05);
 
     for (const v of this.vehicles) {
-      // Animate police lightbar flashing
       if (v.lightbarRed && v.lightbarBlue) {
         if (v.sirenOn) {
           const flash = Math.floor(time * 9) % 2 === 0;
@@ -395,18 +365,15 @@ export class VehicleManager {
         this.updatePlayerVehicle(v, clampedDt, input, callbacks);
       } else if (v.isPoliceChaser) {
         this.updatePoliceAI(v, clampedDt, playerTargetX, playerTargetZ, callbacks);
-      } else if (v.isAI) {
+      } else if (v.isAI && v.aiRoad) {
         this.updateTrafficAI(v, clampedDt, playerTargetX, playerTargetZ);
       } else {
-        // Parked vehicle damping + gravity
         this.applyPassivePhysics(v, clampedDt);
       }
 
-      // Sync mesh transform
       v.mesh.position.set(v.x, v.y, v.z);
       v.mesh.rotation.y = v.yaw;
 
-      // Wheel spin & front wheel steering visual
       const spin = v.speed * clampedDt * 2.4;
       v.wheels.forEach((w, idx) => {
         if (idx < 2) w.rotation.y = v.steerAngle * 0.6;
@@ -414,7 +381,7 @@ export class VehicleManager {
       });
     }
 
-    // Vehicle-to-vehicle simple elastic collision
+    // Vehicle-to-vehicle collision
     for (let i = 0; i < this.vehicles.length; i++) {
       const a = this.vehicles[i];
       for (let j = i + 1; j < this.vehicles.length; j++) {
@@ -422,7 +389,7 @@ export class VehicleManager {
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const dist = Math.hypot(dx, dz);
-        const minDist = (a.spec.width + b.spec.width) * 0.56;
+        const minDist = (a.spec.width + b.spec.width) * 0.55;
         if (dist > 0.01 && dist < minDist) {
           const nx = dx / dist;
           const nz = dz / dist;
@@ -466,8 +433,8 @@ export class VehicleManager {
     let forwardSpeed = v.vx * fwdX + v.vz * fwdZ;
     let lateralSpeed = v.vx * rightX + v.vz * rightZ;
 
-    const maxSpd = input.nitro ? spec.maxSpeed * 1.42 : spec.maxSpeed;
-    const accel = input.nitro ? spec.accel * 1.9 : spec.accel;
+    const maxSpd = input.nitro ? spec.maxSpeed * 1.38 : spec.maxSpeed;
+    const accel = input.nitro ? spec.accel * 1.85 : spec.accel;
 
     if (v.grounded) {
       if (input.throttle > 0.05) {
@@ -479,17 +446,15 @@ export class VehicleManager {
           forwardSpeed += spec.accel * 0.55 * input.throttle * dt;
         }
       } else {
-        // Rolling friction
-        forwardSpeed *= Math.max(0, 1 - 1.35 * dt);
+        forwardSpeed *= Math.max(0, 1 - 1.25 * dt);
       }
 
       if (input.handbrake) {
-        forwardSpeed *= Math.max(0, 1 - 2.6 * dt);
+        forwardSpeed *= Math.max(0, 1 - 2.5 * dt);
       }
 
-      forwardSpeed = Math.max(-spec.maxSpeed * 0.38, Math.min(maxSpd, forwardSpeed));
+      forwardSpeed = Math.max(-spec.maxSpeed * 0.35, Math.min(maxSpd, forwardSpeed));
 
-      // Steering (scales smoothly with speed, reverses when going backward)
       const speedFactor = Math.min(1, Math.abs(forwardSpeed) / 7);
       const steerSign = forwardSpeed >= -0.3 ? 1 : -1;
       const driftBoost = input.handbrake ? 1.45 : 1.0;
@@ -497,7 +462,6 @@ export class VehicleManager {
       v.yaw += targetSteer * dt;
       v.steerAngle = THREE.MathUtils.lerp(v.steerAngle, input.steer, dt * 10);
 
-      // Lateral tire grip (lower during handbrake = sweet GTA drifts!)
       const grip = input.handbrake ? 1.65 : spec.grip;
       lateralSpeed *= Math.max(0, 1 - grip * dt);
 
@@ -508,8 +472,7 @@ export class VehicleManager {
       v.vx = newFwdX * forwardSpeed + newRightX * lateralSpeed;
       v.vz = newFwdZ * forwardSpeed + newRightZ * lateralSpeed;
 
-      // Drift smoke & nitro exhaust flames!
-      if ((input.handbrake && Math.abs(forwardSpeed) > 10) || Math.abs(lateralSpeed) > 6.5) {
+      if ((input.handbrake && Math.abs(forwardSpeed) > 10) || Math.abs(lateralSpeed) > 7) {
         callbacks.onDriftParticle(v.x - newFwdX * 1.8, v.y + 0.25, v.z - newFwdZ * 1.8, 0xcbd5e1);
       }
       if (input.nitro && forwardSpeed > 4) {
@@ -517,12 +480,9 @@ export class VehicleManager {
       }
     }
 
-    // Brake lights
     v.brakeLights.color.setHex(input.throttle < -0.1 || input.handbrake ? 0xff2244 : 0x7f1d1d);
-
-    // Body pitch & roll lean for tactile GTA weight!
     const targetRoll = THREE.MathUtils.clamp(-input.steer * (forwardSpeed / spec.maxSpeed) * 0.11, -0.14, 0.14);
-    const targetPitch = THREE.MathUtils.clamp((input.throttle < 0 ? 0.06 : -input.throttle * 0.045), -0.07, 0.08);
+    const targetPitch = THREE.MathUtils.clamp(input.throttle < 0 ? 0.06 : -input.throttle * 0.045, -0.07, 0.08);
     v.bodyGroup.rotation.z = THREE.MathUtils.lerp(v.bodyGroup.rotation.z, targetRoll, dt * 8);
     v.bodyGroup.rotation.x = THREE.MathUtils.lerp(v.bodyGroup.rotation.x, targetPitch, dt * 8);
 
@@ -550,7 +510,7 @@ export class VehicleManager {
     v.yaw += steer * v.spec.turnRate * dt;
     v.steerAngle = steer;
 
-    const targetSpd = dist > 12 ? Math.min(32, 16 + dist * 0.18) : 10;
+    const targetSpd = dist > 14 ? Math.min(38, 18 + dist * 0.16) : 10;
     const curSpd = Math.hypot(v.vx, v.vz);
     const nextSpd = THREE.MathUtils.lerp(curSpd, targetSpd, dt * 2.6);
     v.vx = Math.sin(v.yaw) * nextSpd;
@@ -562,33 +522,44 @@ export class VehicleManager {
   }
 
   private updateTrafficAI(v: Vehicle, dt: number, playerX: number, playerZ: number): void {
-    // Slow down if player is right ahead
+    const road = v.aiRoad!;
+    const numPts = road.p.length / 2;
+    const tx = road.p[v.aiPointIdx * 2];
+    const tz = road.p[v.aiPointIdx * 2 + 1];
+
+    const dx = tx - v.x;
+    const dz = tz - v.z;
+    const distToPt = Math.hypot(dx, dz);
+    if (distToPt < 4.5) {
+      v.aiPointIdx += v.aiDir;
+      if (v.aiPointIdx >= numPts || v.aiPointIdx < 0) {
+        v.aiDir = v.aiDir === 1 ? -1 : 1;
+        v.aiPointIdx = Math.max(0, Math.min(numPts - 1, v.aiPointIdx + v.aiDir * 2));
+      }
+      return;
+    }
+
+    const desiredYaw = Math.atan2(dx, dz);
+    let diff = desiredYaw - v.yaw;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    v.yaw += diff * Math.min(1, dt * 5.5);
+
+    // Yield if player is right ahead
     const fwdX = Math.sin(v.yaw);
     const fwdZ = Math.cos(v.yaw);
-    const dx = playerX - v.x;
-    const dz = playerZ - v.z;
-    const along = dx * fwdX + dz * fwdZ;
-    const side = Math.abs(dx * fwdZ - dz * fwdX);
+    const pdx = playerX - v.x;
+    const pdz = playerZ - v.z;
+    const along = pdx * fwdX + pdz * fwdZ;
+    const side = Math.abs(pdx * fwdZ - pdz * fwdX);
     const blocked = along > 1 && along < 14 && side < 3.4;
 
-    const target = blocked ? 0 : v.aiSpeed;
-    v.speed = THREE.MathUtils.lerp(v.speed, target, dt * 4);
+    v.speed = THREE.MathUtils.lerp(v.speed, blocked ? 0 : v.aiSpeed, dt * 4);
     v.vx = fwdX * v.speed;
     v.vz = fwdZ * v.speed;
-
     v.x += v.vx * dt;
     v.z += v.vz * dt;
-
-    // Loop smoothly at Brno outer ring edges
-    if (v.aiAxis === 'z') {
-      if (v.z > 305) v.z = -210;
-      if (v.z < -215) v.z = 300;
-    } else {
-      if (v.x > 290) v.x = -280;
-      if (v.x < -285) v.x = 285;
-    }
-    const surf = this.world.getSurfaceHeight(v.x, v.z);
-    v.y = surf.y;
+    v.y = this.world.getSurfaceHeight(v.x, v.z).y;
   }
 
   private applyPassivePhysics(v: Vehicle, dt: number): void {
@@ -617,62 +588,42 @@ export class VehicleManager {
     }
   ): void {
     const prevSurf = this.world.getSurfaceHeight(v.x, v.z);
-    const nextX = THREE.MathUtils.clamp(v.x + v.vx * dt, -WORLD_HALF + 12, WORLD_HALF - 12);
-    const nextZ = THREE.MathUtils.clamp(v.z + v.vz * dt, -WORLD_HALF + 12, WORLD_HALF - 12);
+    const nextX = THREE.MathUtils.clamp(v.x + v.vx * dt, WORLD_BOUNDS.minX, WORLD_BOUNDS.maxX);
+    const nextZ = THREE.MathUtils.clamp(v.z + v.vz * dt, WORLD_BOUNDS.minZ, WORLD_BOUNDS.maxZ);
 
-    // Building AABB collision
-    const rad = v.spec.width * 0.52;
-    let finalX = nextX;
-    let finalZ = nextZ;
-    let crashed = false;
+    // Exact 2D polygon collision against all 4,762 real 1:1 Brno buildings via O(1) spatial hash!
+    const rad = v.spec.width * 0.5;
+    const res = this.world.spatial.resolveCircleCollision(nextX, v.y, nextZ, rad);
+    v.x = res.x;
+    v.z = res.z;
 
-    for (const box of this.world.colliders) {
-      if (v.y > box.maxY + 0.5 || v.y + v.spec.height < box.minY) continue;
-      if (
-        finalX + rad > box.minX &&
-        finalX - rad < box.maxX &&
-        finalZ + rad > box.minZ &&
-        finalZ - rad < box.maxZ
-      ) {
-        const penLeft = Math.abs((finalX + rad) - box.minX);
-        const penRight = Math.abs(box.maxX - (finalX - rad));
-        const penTop = Math.abs((finalZ + rad) - box.minZ);
-        const penBottom = Math.abs(box.maxZ - (finalZ - rad));
-        const minPen = Math.min(penLeft, penRight, penTop, penBottom);
-
-        if (minPen === penLeft) { finalX = box.minX - rad; v.vx = -v.vx * 0.32; }
-        else if (minPen === penRight) { finalX = box.maxX + rad; v.vx = -v.vx * 0.32; }
-        else if (minPen === penTop) { finalZ = box.minZ - rad; v.vz = -v.vz * 0.32; }
-        else { finalZ = box.maxZ + rad; v.vz = -v.vz * 0.32; }
-        crashed = true;
+    if (res.hit) {
+      // Slide smoothly along the building wall instead of getting stuck!
+      const vn = v.vx * res.nx + v.vz * res.nz;
+      if (vn < 0) {
+        if (v.isPlayer && -vn > 6) {
+          callbacks.onCrash(Math.min(1, -vn / 24));
+        }
+        v.vx -= 1.28 * vn * res.nx;
+        v.vz -= 1.28 * vn * res.nz;
+        v.vx *= 0.85;
+        v.vz *= 0.85;
       }
     }
 
-    if (crashed && v.isPlayer) {
-      const spd = Math.hypot(v.vx, v.vz);
-      if (spd > 4) callbacks.onCrash(Math.min(1, spd / 22));
-    }
-
-    v.x = finalX;
-    v.z = finalZ;
-
-    // Terrain & Ramp elevation + Airborne Stunt Jump physics!
     const surf = this.world.getSurfaceHeight(v.x, v.z);
-    if (surf.ramp) {
-      v.lastRampName = surf.ramp.name;
-    }
+    if (surf.ramp) v.lastRampName = surf.ramp.name;
 
     if (v.grounded) {
       const dh = surf.y - prevSurf.y;
       if (dh < -0.55 && prevSurf.ramp) {
-        // Launched off the top lip of a stunt ramp!
         const horizSpd = Math.hypot(v.vx, v.vz);
-        v.vy = Math.min(15.5, horizSpd * 0.36 + 3.5);
+        v.vy = Math.min(17.5, horizSpd * 0.34 + 3.8);
         v.grounded = false;
         v.airTime = 0;
         v.stuntStartX = v.x;
         v.stuntStartZ = v.z;
-      } else if (v.y > surf.y + 0.75) {
+      } else if (v.y > surf.y + 0.8) {
         v.grounded = false;
         v.airTime = 0;
       } else {
@@ -689,15 +640,13 @@ export class VehicleManager {
         v.grounded = true;
         if (v.isPlayer && v.airTime > 0.75 && v.lastRampName) {
           const dist = Math.round(Math.hypot(v.x - v.stuntStartX, v.z - v.stuntStartZ));
-          if (dist >= 14) {
-            callbacks.onStuntComplete(v.lastRampName, dist);
-          }
+          if (dist >= 14) callbacks.onStuntComplete(v.lastRampName, dist);
         }
         v.lastRampName = null;
       }
     }
 
-    // Check destructible props (street lamps, Zelňák market stalls!)
+    // Destructible props (Zelný trh stalls)
     if (v.isPlayer || v.isPoliceChaser) {
       for (const prop of this.world.destructibles) {
         if (prop.hit) continue;

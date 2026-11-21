@@ -3,12 +3,11 @@ import {
   BRNO_LANDMARKS,
   GameHUDState,
   TimePreset,
-  VEHICLE_SPECS,
   VehicleKind,
   WEAPON_SPECS,
-  WeaponId,
   getDistrictAt
 } from './types';
+import { BrnoOSMData } from './osm';
 import { createBrnoTextures } from './textures';
 import { BrnoAudioEngine } from './audio';
 import { BrnoWorld, buildBrnoWorld } from './world';
@@ -54,7 +53,6 @@ export class BrnoGameEngine {
   private particles: Particle[] = [];
   private particleGeo = new THREE.SphereGeometry(0.38, 6, 6);
 
-  // Game state
   public started = false;
   public paused = false;
   private playerVehicle: Vehicle | null = null;
@@ -62,27 +60,24 @@ export class BrnoGameEngine {
   private wanted = 0;
   private wantedTimer = 0;
   private nitro = 100;
-  private timeOfDay = 17.8; // Start at iconic GTA VI golden-pink Vice Brno sunset!
+  private timeOfDay = 17.8;
   private timeSpeed = 0.04;
   private customWaypoint: { x: number; z: number } | null = null;
   private sprayCooldown = 0;
 
-  // Camera
   private camYaw = Math.PI;
   private camPitch = 0.24;
-  private camPos = new THREE.Vector3(0, 8, 25);
-  private camLook = new THREE.Vector3(0, 2, 14);
+  private camPos = new THREE.Vector3(-2, 10, 26);
+  private camLook = new THREE.Vector3(-2, 2, 12);
   private isDraggingMouse = false;
   private pointerLocked = false;
 
-  // Input
   private keys = new Set<string>();
   private touchMove = { x: 0, y: 0 };
   private touchActions = { sprint: false, brake: false, shoot: false };
   private interactQueued = false;
   private mouseDown = false;
 
-  // Callbacks
   private onHUDUpdate: (state: GameHUDState) => void;
   private onBanner: (banner: BannerEvent) => void;
   private lastTime = 0;
@@ -94,6 +89,7 @@ export class BrnoGameEngine {
     container: HTMLElement,
     hudMinimapCanvas: HTMLCanvasElement,
     fullMapCanvas: HTMLCanvasElement,
+    osm: BrnoOSMData,
     onHUDUpdate: (state: GameHUDState) => void,
     onBanner: (banner: BannerEvent) => void
   ) {
@@ -101,7 +97,6 @@ export class BrnoGameEngine {
     this.onHUDUpdate = onHUDUpdate;
     this.onBanner = onBanner;
 
-    // Renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
@@ -111,13 +106,11 @@ export class BrnoGameEngine {
     this.renderer.toneMappingExposure = 1.08;
     container.appendChild(this.renderer.domElement);
 
-    // Scene & Fog
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x2d1e3b, 0.0022);
+    this.scene.fog = new THREE.FogExp2(0x2d1e3b, 0.00105);
 
-    this.camera = new THREE.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.4, 950);
+    this.camera = new THREE.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.4, 1750);
 
-    // Procedural GTA VI Vice-Sunset Sky Dome Shader
     this.skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
@@ -147,20 +140,19 @@ export class BrnoGameEngine {
         }
       `
     });
-    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(720, 24, 16), this.skyMat);
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(1550, 24, 16), this.skyMat);
     this.scene.add(skyDome);
 
-    // Lights
     this.hemiLight = new THREE.HemisphereLight(0xffb59b, 0x26293d, 0.85);
     this.scene.add(this.hemiLight);
 
     this.sunLight = new THREE.DirectionalLight(0xffc98c, 1.85);
-    this.sunLight.position.set(160, 120, -140);
+    this.sunLight.position.set(180, 140, -160);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.mapSize.set(2048, 2048);
     this.sunLight.shadow.camera.near = 20;
-    this.sunLight.shadow.camera.far = 480;
-    const d = 140;
+    this.sunLight.shadow.camera.far = 560;
+    const d = 180;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -169,9 +161,8 @@ export class BrnoGameEngine {
     this.scene.add(this.sunLight);
     this.scene.add(this.sunLight.target);
 
-    // Build Brno World + Systems
     const textures = createBrnoTextures();
-    this.world = buildBrnoWorld(textures);
+    this.world = buildBrnoWorld(textures, osm);
     this.scene.add(this.world.group);
 
     this.trams = new SalinaSystem(this.world.tramPath, textures);
@@ -186,7 +177,7 @@ export class BrnoGameEngine {
     this.missions = new MissionAndCollectibleSystem(this.world);
     this.scene.add(this.missions.group);
 
-    this.minimap = new BrnoMinimapRenderer(hudMinimapCanvas, fullMapCanvas);
+    this.minimap = new BrnoMinimapRenderer(hudMinimapCanvas, fullMapCanvas, osm);
 
     this.bindEvents();
     this.applyLightingForTime();
@@ -240,32 +231,20 @@ export class BrnoGameEngine {
     if (!this.started || this.paused) return;
     this.audio.unlock();
 
-    if (code === 'KeyF') {
-      this.toggleVehicle();
-    } else if (code === 'KeyE') {
-      this.interactQueued = true;
-    } else if (code === 'Digit1') {
-      this.playerSys.setWeapon('fists');
-    } else if (code === 'Digit2') {
-      this.playerSys.setWeapon('pistol');
-    } else if (code === 'Digit3') {
-      this.playerSys.setWeapon('smg');
-    } else if (code === 'Digit4') {
-      this.playerSys.setWeapon('rpg');
-    } else if (code === 'KeyR' && this.playerVehicle) {
+    if (code === 'KeyF') this.toggleVehicle();
+    else if (code === 'KeyE') this.interactQueued = true;
+    else if (code === 'Digit1') this.playerSys.setWeapon('fists');
+    else if (code === 'Digit2') this.playerSys.setWeapon('pistol');
+    else if (code === 'Digit3') this.playerSys.setWeapon('smg');
+    else if (code === 'Digit4') this.playerSys.setWeapon('rpg');
+    else if (code === 'KeyR' && this.playerVehicle) {
       const name = this.audio.nextRadio();
       this.onBanner({ title: name, subtitle: 'Naladěno rádio', accent: 'cyan' });
     } else if (code === 'KeyH' && this.playerVehicle) {
-      if (this.playerVehicle.spec.isPolice) {
-        this.playerVehicle.sirenOn = !this.playerVehicle.sirenOn;
-      } else {
-        this.audio.playHorn();
-      }
-    } else if (code === 'KeyT') {
-      this.cycleTimePreset();
-    } else if (code === 'KeyC') {
-      this.requestPointerLock();
-    }
+      if (this.playerVehicle.spec.isPolice) this.playerVehicle.sirenOn = !this.playerVehicle.sirenOn;
+      else this.audio.playHorn();
+    } else if (code === 'KeyT') this.cycleTimePreset();
+    else if (code === 'KeyC') this.requestPointerLock();
   };
 
   private handleKeyUp = (e: KeyboardEvent): void => {
@@ -289,17 +268,15 @@ export class BrnoGameEngine {
     this.paused = false;
     this.audio.unlock();
     this.onBanner({
-      title: 'VÍTEJ V BRNĚ',
-      subtitle: 'Náměstí Svobody • Najdi Orloj nebo ukradni auto [F]',
+      title: 'VÍTEJ V BRNĚ 1:1',
+      subtitle: 'náměstí Svobody • 237 reálných ulic a 4 762 budov',
       accent: 'pink'
     });
   }
 
   public setPaused(p: boolean): void {
     this.paused = p;
-    if (p && document.pointerLockElement) {
-      document.exitPointerLock?.();
-    }
+    if (p && document.pointerLockElement) document.exitPointerLock?.();
   }
 
   public setShadowsEnabled(enabled: boolean): void {
@@ -308,12 +285,7 @@ export class BrnoGameEngine {
   }
 
   public setTimePreset(preset: TimePreset): void {
-    const map: Record<TimePreset, number> = {
-      dawn: 6.2,
-      day: 11.0, // Iconic 11:00 Brno noon!
-      sunset: 17.8,
-      night: 22.8
-    };
+    const map: Record<TimePreset, number> = { dawn: 6.2, day: 11.0, sunset: 17.8, night: 22.8 };
     this.timeOfDay = map[preset];
     this.applyLightingForTime();
   }
@@ -326,31 +298,32 @@ export class BrnoGameEngine {
   }
 
   public spawnPlayerCar(kind: VehicleKind): void {
-    const px = this.getPlayerPos().x;
-    const pz = this.getPlayerPos().z;
-    const fx = px + Math.sin(this.camYaw + Math.PI) * 6;
-    const fz = pz + Math.cos(this.camYaw + Math.PI) * 6;
-    const car = this.vehicles.spawnVehicle(kind, fx, fz, this.camYaw + Math.PI);
+    const pos = this.getPlayerPos();
+    const sp = this.world.spatial.getNearestRoadSpawn(pos.x, pos.z, 3);
+    const car = this.vehicles.spawnVehicle(kind, sp.x, sp.z, sp.yaw);
     this.onBanner({
       title: car.spec.name,
-      subtitle: 'Přistaveno vedle tebe • Nastup klávesou [F]',
+      subtitle: 'Přistaveno na nejbližší ulici • Nastup klávesou [F]',
       accent: 'cyan'
     });
   }
 
   public fastTravelTo(x: number, z: number, label?: string): void {
-    const surf = this.world.getSurfaceHeight(x, z);
+    const safe = this.world.spatial.hitsBuilding(x, 2, z)
+      ? this.world.spatial.getNearestRoadSpawn(x, z, 0)
+      : { x, z };
+    const surf = this.world.getSurfaceHeight(safe.x, safe.z);
     if (this.playerVehicle) {
-      this.playerVehicle.x = x;
+      this.playerVehicle.x = safe.x;
       this.playerVehicle.y = surf.y + 0.4;
-      this.playerVehicle.z = z;
+      this.playerVehicle.z = safe.z;
       this.playerVehicle.vx = 0;
       this.playerVehicle.vz = 0;
       this.playerVehicle.speed = 0;
     } else {
-      this.playerSys.x = x;
+      this.playerSys.x = safe.x;
       this.playerSys.y = surf.y + 0.2;
-      this.playerSys.z = z;
+      this.playerSys.z = safe.z;
     }
     this.customWaypoint = null;
     if (label) {
@@ -360,21 +333,18 @@ export class BrnoGameEngine {
 
   public handleFullMapClick(canvasX: number, canvasY: number, fastTravel: boolean): string {
     const worldPt = this.minimap.canvasPointToWorld(canvasX, canvasY);
-    // Check if near any landmark
     let nearest = null;
-    let bestD = 32;
+    let bestD = 75;
     for (const lm of BRNO_LANDMARKS) {
       const d = Math.hypot(lm.x - worldPt.x, lm.z - worldPt.z);
       if (d < bestD) { bestD = d; nearest = lm; }
     }
     const tx = nearest ? nearest.x : worldPt.x;
     const tz = nearest ? nearest.z : worldPt.z;
-    const label = nearest ? nearest.name : getDistrictAt(tx, tz);
-    if (fastTravel) {
-      this.fastTravelTo(tx, tz, label);
-    } else {
-      this.customWaypoint = { x: tx, z: tz };
-    }
+    const street = this.world.spatial.getStreetNameAt(tx, tz);
+    const label = nearest ? nearest.name : `${street} (${getDistrictAt(tx, tz)})`;
+    if (fastTravel) this.fastTravelTo(tx, tz, label);
+    else this.customWaypoint = { x: tx, z: tz };
     return label;
   }
 
@@ -406,33 +376,27 @@ export class BrnoGameEngine {
 
   public toggleVehicle(): void {
     if (this.playerVehicle) {
-      // Exit vehicle to left side
       const v = this.playerVehicle;
       v.isPlayer = false;
       v.sirenOn = false;
       this.playerVehicle = null;
       const sideX = Math.cos(v.yaw) * (v.spec.width * 0.5 + 1.3);
       const sideZ = -Math.sin(v.yaw) * (v.spec.width * 0.5 + 1.3);
-      this.playerSys.x = v.x - sideX;
-      this.playerSys.z = v.z - sideZ;
+      const res = this.world.spatial.resolveCircleCollision(v.x - sideX, v.y, v.z - sideZ, 0.6);
+      this.playerSys.x = res.x;
+      this.playerSys.z = res.z;
       this.playerSys.y = this.world.getSurfaceHeight(this.playerSys.x, this.playerSys.z).y;
       return;
     }
 
-    // Find nearest vehicle within 6.2m
     let best: Vehicle | null = null;
-    let bestDist = 6.2;
+    let bestDist = 6.8;
     for (const v of this.vehicles.vehicles) {
       const d = Math.hypot(v.x - this.playerSys.x, v.z - this.playerSys.z);
-      if (d < bestDist) {
-        bestDist = d;
-        best = v;
-      }
+      if (d < bestDist) { bestDist = d; best = v; }
     }
     if (best) {
-      if (best.isAI || best.spec.isPolice) {
-        this.addWanted(best.spec.isPolice ? 2 : 1);
-      }
+      if (best.isAI || best.spec.isPolice) this.addWanted(best.spec.isPolice ? 2 : 1);
       best.isAI = false;
       best.isPoliceChaser = false;
       best.isPlayer = true;
@@ -447,9 +411,7 @@ export class BrnoGameEngine {
   }
 
   public getPlayerPos(): THREE.Vector3 {
-    if (this.playerVehicle) {
-      return new THREE.Vector3(this.playerVehicle.x, this.playerVehicle.y, this.playerVehicle.z);
-    }
+    if (this.playerVehicle) return new THREE.Vector3(this.playerVehicle.x, this.playerVehicle.y, this.playerVehicle.z);
     return new THREE.Vector3(this.playerSys.x, this.playerSys.y, this.playerSys.z);
   }
 
@@ -459,7 +421,7 @@ export class BrnoGameEngine {
       this.wanted = next;
       this.onBanner({
         title: `HLEDÁN POLICIÍ ČR (${'★'.repeat(this.wanted)})`,
-        subtitle: 'Zajeď do Autolakýrny Cejl nebo jim zmiz z dohledu!',
+        subtitle: 'Zajeď na Cejl do Autolakýrny nebo jim zmiz z dohledu!',
         accent: 'red'
       });
     }
@@ -505,7 +467,6 @@ export class BrnoGameEngine {
     let nightFactor = 0;
 
     if (t >= 17 && t < 20) {
-      // GTA VI Vice Brno Golden-Magenta Sunset!
       const k = (t - 17) / 3;
       nightFactor = k * 0.75;
       this.skyMat.uniforms.topColor.value.setHex(0x1e1348);
@@ -517,7 +478,6 @@ export class BrnoGameEngine {
       this.hemiLight.intensity = 0.85 - k * 0.25;
       (this.scene.fog as THREE.FogExp2).color.setHex(0x3a203e);
     } else if (t >= 20 || t < 5.5) {
-      // Neon Cyberpunk Brno Night
       nightFactor = 1.0;
       this.skyMat.uniforms.topColor.value.setHex(0x050816);
       this.skyMat.uniforms.midColor.value.setHex(0x131936);
@@ -528,7 +488,6 @@ export class BrnoGameEngine {
       this.hemiLight.intensity = 0.48;
       (this.scene.fog as THREE.FogExp2).color.setHex(0x0d1226);
     } else if (t >= 5.5 && t < 8) {
-      // Moravian Dawn
       nightFactor = 0.35;
       this.skyMat.uniforms.topColor.value.setHex(0x312e81);
       this.skyMat.uniforms.midColor.value.setHex(0xf472b6);
@@ -539,7 +498,6 @@ export class BrnoGameEngine {
       this.hemiLight.intensity = 0.78;
       (this.scene.fog as THREE.FogExp2).color.setHex(0x4a3b5c);
     } else {
-      // Crisp Sunny Brno Day
       nightFactor = 0.0;
       this.skyMat.uniforms.topColor.value.setHex(0x1d4ed8);
       this.skyMat.uniforms.midColor.value.setHex(0x60a5fa);
@@ -552,10 +510,10 @@ export class BrnoGameEngine {
     }
 
     const sunAngle = ((t - 6) / 12) * Math.PI;
-    const sunX = Math.cos(sunAngle) * 190;
-    const sunY = Math.max(35, Math.sin(sunAngle) * 180);
+    const sunX = Math.cos(sunAngle) * 210;
+    const sunY = Math.max(45, Math.sin(sunAngle) * 200);
     const pPos = this.getPlayerPos();
-    this.sunLight.position.set(pPos.x + sunX, sunY, pPos.z - 120);
+    this.sunLight.position.set(pPos.x + sunX, sunY, pPos.z - 140);
     this.sunLight.target.position.set(pPos.x, 0, pPos.z);
 
     this.world.updateVisuals(performance.now() * 0.001, nightFactor);
@@ -571,12 +529,11 @@ export class BrnoGameEngine {
     const elapsed = now * 0.001;
 
     if (!this.started) {
-      // Cinematic slow drone orbit over Náměstí Svobody, Špilberk & Petrov on Start Screen!
-      const angle = elapsed * 0.16;
-      this.camera.position.set(Math.cos(angle) * 78, 36 + Math.sin(elapsed * 0.3) * 6, Math.sin(angle) * 78);
-      this.camera.lookAt(-12, 8, 2);
+      const angle = elapsed * 0.14;
+      this.camera.position.set(Math.cos(angle) * 140, 62 + Math.sin(elapsed * 0.3) * 8, Math.sin(angle) * 140);
+      this.camera.lookAt(-10, 12, 0);
       this.world.updateVisuals(elapsed, 0.55);
-      this.trams.update(dt, new THREE.Vector3(999, 0, 999), () => {});
+      this.trams.update(dt, new THREE.Vector3(9999, 0, 9999), () => {});
       this.renderer.render(this.scene, this.camera);
       return;
     }
@@ -586,24 +543,18 @@ export class BrnoGameEngine {
       return;
     }
 
-    // 1. Time of day progression
     this.timeOfDay = (this.timeOfDay + dt * this.timeSpeed) % 24;
     this.applyLightingForTime();
 
-    // 2. Gather Input
     const fwd = (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) - (this.keys.has('KeyS') || this.keys.has('ArrowDown') ? 1 : 0);
     const side = (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0) - (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0);
     const sprint = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchActions.sprint;
     const space = this.keys.has('Space') || this.touchActions.brake;
     const firing = this.mouseDown || this.touchActions.shoot;
 
-    // 3. Drive or Walk
     const usingNitro = Boolean(this.playerVehicle && sprint && this.nitro > 2 && fwd > 0);
-    if (usingNitro) {
-      this.nitro = Math.max(0, this.nitro - 28 * dt);
-    } else {
-      this.nitro = Math.min(100, this.nitro + 12 * dt);
-    }
+    if (usingNitro) this.nitro = Math.max(0, this.nitro - 25 * dt);
+    else this.nitro = Math.min(100, this.nitro + 12 * dt);
 
     const driveInput: DriveInput = {
       throttle: THREE.MathUtils.clamp(fwd - this.touchMove.y, -1, 1),
@@ -629,9 +580,7 @@ export class BrnoGameEngine {
           accent: 'gold'
         });
       },
-      onPropHit: () => {
-        this.audio.playCrash(0.4);
-      },
+      onPropHit: () => this.audio.playCrash(0.4),
       onDriftParticle: (x, y, z, color) => {
         if (Math.random() < 0.45) this.spawnParticle(x, y, z, color, 0.7, 0.8, 0.38);
       }
@@ -647,7 +596,6 @@ export class BrnoGameEngine {
       space
     );
 
-    // Weapon firing on foot
     if (!this.playerVehicle && firing) {
       const aimDir = new THREE.Vector3();
       this.camera.getWorldDirection(aimDir);
@@ -662,19 +610,13 @@ export class BrnoGameEngine {
 
     const pPos = this.getPlayerPos();
 
-    // 4. Update NPCs, Projectiles & Trams
     this.playerSys.updateNPCsAndProjectiles(dt, pPos.x, pPos.y, pPos.z, this.vehicles.vehicles, {
       onExplosion: (x, y, z) => this.spawnExplosion(x, y, z),
       onCrime: (sev) => this.addWanted(sev),
       onPlayerHit: (dmg) => {
-        if (this.playerSys.armor > 0) {
-          this.playerSys.armor = Math.max(0, this.playerSys.armor - dmg);
-        } else {
-          this.playerSys.health = Math.max(0, this.playerSys.health - dmg);
-        }
-        if (this.playerSys.health <= 0) {
-          this.handleWasted();
-        }
+        if (this.playerSys.armor > 0) this.playerSys.armor = Math.max(0, this.playerSys.armor - dmg);
+        else this.playerSys.health = Math.max(0, this.playerSys.health - dmg);
+        if (this.playerSys.health <= 0) this.handleWasted();
       },
       onHostileKilled: () => {
         this.money += 1500;
@@ -684,7 +626,6 @@ export class BrnoGameEngine {
 
     this.trams.update(dt, pPos, () => this.audio.playTramBell());
 
-    // 5. Animate Hit Destructible Props
     for (const prop of this.world.destructibles) {
       if (!prop.hit) continue;
       prop.vy -= 20 * dt;
@@ -705,9 +646,9 @@ export class BrnoGameEngine {
       prop.mesh.rotation.z += prop.rz * dt;
     }
 
-    // 6. Pay 'n' Spray Garage Check (Autolakýrna Cejl at 185, -55)
+    // Autolakýrna Cejl (720, -201)
     this.sprayCooldown = Math.max(0, this.sprayCooldown - dt);
-    if (this.playerVehicle && this.sprayCooldown <= 0 && Math.hypot(pPos.x - 185, pPos.z + 55) < 6.5) {
+    if (this.playerVehicle && this.sprayCooldown <= 0 && Math.hypot(pPos.x - 720, pPos.z + 201) < 8.5) {
       this.vehicles.repaintAndRepair(this.playerVehicle);
       this.clearWanted();
       this.audio.playSuccess();
@@ -719,24 +660,19 @@ export class BrnoGameEngine {
       });
     }
 
-    // 7. Wanted System & Policie ČR Pursuit
     if (this.wanted > 0) {
       this.vehicles.ensurePoliceChasers(this.wanted, pPos.x, pPos.z);
-      // Cooldown ticks down if no cop is within 34m
       const closestCop = this.vehicles.vehicles
         .filter(v => v.isPoliceChaser)
         .reduce((min, v) => Math.min(min, Math.hypot(v.x - pPos.x, v.z - pPos.z)), Infinity);
-      if (closestCop > 36) {
+      if (closestCop > 45) {
         this.wantedTimer -= dt;
-        if (this.wantedTimer <= 0) {
-          this.clearWanted();
-        }
+        if (this.wantedTimer <= 0) this.clearWanted();
       } else {
         this.wantedTimer = Math.min(26, this.wantedTimer + dt * 2);
       }
     }
 
-    // 8. Missions & Collectibles
     const { promptText: missionPrompt } = this.missions.update(
       dt,
       elapsed,
@@ -775,7 +711,6 @@ export class BrnoGameEngine {
     );
     this.interactQueued = false;
 
-    // 9. Update Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const pt = this.particles[i];
       pt.life -= dt;
@@ -792,9 +727,7 @@ export class BrnoGameEngine {
       }
     }
 
-    // 10. Camera Follow (Smooth GTA chase camera behind car or over shoulder on foot)
     if (this.playerVehicle) {
-      // Gently align camera behind driving direction unless dragging mouse
       if (!this.isDraggingMouse && !this.pointerLocked && Math.abs(this.playerVehicle.speed) > 2.5) {
         const desiredYaw = this.playerVehicle.yaw + Math.PI;
         let diff = desiredYaw - this.camYaw;
@@ -802,8 +735,8 @@ export class BrnoGameEngine {
         while (diff < -Math.PI) diff += Math.PI * 2;
         this.camYaw += diff * Math.min(1, dt * 3.4);
       }
-      const speedExtra = Math.min(3.5, Math.abs(this.playerVehicle.speed) * 0.08);
-      const dist = 9.2 + speedExtra;
+      const speedExtra = Math.min(4.0, Math.abs(this.playerVehicle.speed) * 0.065);
+      const dist = 9.4 + speedExtra;
       const targetPos = new THREE.Vector3(
         pPos.x + Math.sin(this.camYaw) * dist * Math.cos(this.camPitch),
         pPos.y + 3.2 + Math.sin(this.camPitch) * dist,
@@ -826,12 +759,10 @@ export class BrnoGameEngine {
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camLook);
 
-    // 11. Audio Update
     const speedRatio = this.playerVehicle ? this.playerVehicle.speed / this.playerVehicle.spec.maxSpeed : 0;
     const policeSirenNear = this.wanted > 0 || Boolean(this.playerVehicle?.sirenOn);
     this.audio.update(dt, Boolean(this.playerVehicle), speedRatio, policeSirenNear);
 
-    // 12. Render 3D & Minimap + Push HUD State
     this.renderer.render(this.scene, this.camera);
 
     this.hudTimer += dt;
@@ -848,13 +779,10 @@ export class BrnoGameEngine {
         customWaypoint: this.customWaypoint
       });
 
-      // Contextual prompt if near a car on foot
       let promptText = missionPrompt;
       if (!promptText && !this.playerVehicle) {
-        const nearCar = this.vehicles.vehicles.find(v => Math.hypot(v.x - pPos.x, v.z - pPos.z) < 5.5);
-        if (nearCar) {
-          promptText = `Stiskni [F] pro nastoupení do ${nearCar.spec.name}`;
-        }
+        const nearCar = this.vehicles.vehicles.find(v => Math.hypot(v.x - pPos.x, v.z - pPos.z) < 6.2);
+        if (nearCar) promptText = `Stiskni [F] pro nastoupení do ${nearCar.spec.name}`;
       }
 
       const speedKmh = this.playerVehicle ? Math.round(Math.abs(this.playerVehicle.speed) * 3.6) : 0;
@@ -862,13 +790,13 @@ export class BrnoGameEngine {
         ? 'N'
         : this.playerVehicle.speed < -0.5
           ? 'R'
-          : speedKmh < 28
+          : speedKmh < 32
             ? '1'
-            : speedKmh < 62
+            : speedKmh < 72
               ? '2'
-              : speedKmh < 105
+              : speedKmh < 120
                 ? '3'
-                : speedKmh < 145
+                : speedKmh < 168
                   ? '4'
                   : '5';
 
@@ -894,11 +822,12 @@ export class BrnoGameEngine {
         weaponId: this.playerSys.weaponId,
         weaponName: weaponSpec.name,
         ammoText: this.playerSys.weaponId === 'fists' ? '∞' : `${this.playerSys.ammo[this.playerSys.weaponId]}`,
+        streetName: this.world.spatial.getStreetNameAt(pPos.x, pPos.z),
         district: getDistrictAt(pPos.x, pPos.z),
         gameTimeStr: `${hh}:${mm}`,
         radioStation: this.audio.getRadioName(),
-        missionTitle: activeMission ? activeMission.title : 'Volná jízda po Brně',
-        missionHint: activeStep ? activeStep.hint : 'Všechny mise splněny! Posbírej všech 10 zlatých kuliček.',
+        missionTitle: activeMission ? activeMission.title : 'Volná jízda po Brně 1:1',
+        missionHint: activeStep ? activeStep.hint : 'Všechny mise splněny! Prozkoumej všech 237 brněnských ulic.',
         missionDistance: missionTarget ? Math.round(Math.hypot(pPos.x - missionTarget.x, pPos.z - missionTarget.z)) : null,
         collectiblesFound: collected,
         collectiblesTotal: this.missions.collectibles.length,
@@ -915,7 +844,7 @@ export class BrnoGameEngine {
     this.clearWanted();
     this.money = Math.max(0, this.money - 1000);
     if (this.playerVehicle) this.toggleVehicle();
-    this.fastTravelTo(0, 14);
+    this.fastTravelTo(-2, 12);
     this.onBanner({
       title: 'ZABIT (FN BRNO BOHUNICE)',
       subtitle: 'Ošetření stálo 1 000 Kč • Zpět na Náměstí Svobody',

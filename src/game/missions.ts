@@ -13,17 +13,17 @@ export const BRNO_MISSIONS: MissionDef[] = [
         title: 'Chyť kuličku z Brněnského orloje',
         hint: 'Dojdi k černému Orloji na Náměstí Svobody a stiskni [E]',
         type: 'interact',
-        targetX: -14,
-        targetZ: 6,
-        radius: 5.5
+        targetX: -10,
+        targetZ: -4,
+        radius: 6.5
       },
       {
         title: 'Doruč kuličku pod sochu Jošta',
-        hint: 'Nastup do auta [F] a dojeď k jezdecké soše na Moravském náměstí',
+        hint: 'Nastup do auta [F] a dojeď po Rašínově k soše Jošta na Moravské náměstí',
         type: 'goto',
-        targetX: 20,
-        targetZ: -124,
-        radius: 10
+        targetX: -31,
+        targetZ: -333,
+        radius: 14
       }
     ]
   },
@@ -35,43 +35,43 @@ export const BRNO_MISSIONS: MissionDef[] = [
     steps: [
       {
         title: 'Vyjeď na nádvoří Hradu Špilberk',
-        hint: 'Použij kopec nad Husovou a dostaň se až na hradní nádvoří',
+        hint: 'Vystoupej přes Husovu a Gorazdovu až na vrchol Hradu Špilberk',
         type: 'vehicle_goto',
-        targetX: -206,
-        targetZ: -25,
-        radius: 14,
+        targetX: -666,
+        targetZ: 84,
+        radius: 22,
         wantedToTrigger: 2
       },
       {
-        title: 'Setřes Policii ČR nebo projeď Autolakýrnou',
-        hint: 'Skoč z hradní rampy a zajeď do Autolakýrny Cejl (azurový bod)',
+        title: 'Setřes Policii ČR nebo projeď Autolakýrnou Cejl',
+        hint: 'Zajeď na Cejl do Autolakýrny (azurový bod na mapě) nebo zmiz PČR',
         type: 'escape_police',
-        targetX: 185,
-        targetZ: -55,
-        radius: 12
+        targetX: 720,
+        targetZ: -201,
+        radius: 16
       }
     ]
   },
   {
     id: 'koliste-race',
-    title: 'Noční Závod k AZ Tower',
+    title: 'Noční Závod přes Koliště k AZ Tower',
     giver: 'Brno Street Club',
     reward: 35000,
     steps: [
       {
-        title: 'Projeď všechny závodní branky (6)',
-        hint: 'Sešlápni plyn + Nitro [Shift] přes Koliště a Hlavní nádraží až k AZ Tower',
+        title: 'Projeď 6 závodních branek centrem Brna',
+        hint: 'Sešlápni plyn + Nitro [Shift]: Koliště -> Hlavní nádraží -> Nové sady -> Heršpická -> AZ Tower',
         type: 'checkpoints',
-        targetX: 130,
-        targetZ: -110,
-        radius: 14,
+        targetX: 465,
+        targetZ: -80,
+        radius: 22,
         checkpoints: [
-          { x: 130, z: -110 },
-          { x: 130, z: 0 },
-          { x: 130, z: 110 },
-          { x: 130, z: 220 },
-          { x: 20, z: 220 },
-          { x: 185, z: 260 }
+          { x: 465, z: -80 },   // Koliště sever
+          { x: 505, z: 220 },   // Malinovského náměstí
+          { x: 295, z: 465 },   // Hlavní nádraží (Nádražní)
+          { x: -165, z: 660 },  // Nové sady
+          { x: -270, z: 1200 }, // Heršpická
+          { x: -83, z: 1380 }   // AZ Tower 111 m!
         ]
       }
     ]
@@ -86,18 +86,18 @@ export const BRNO_MISSIONS: MissionDef[] = [
         title: 'Zneškodni rivaly u Kašny Parnas',
         hint: 'Vyber zbraň [2/3/4] a eliminuj 4 členy gangu na Zelném trhu',
         type: 'eliminate',
-        targetX: -22,
-        targetZ: 110,
-        radius: 36,
+        targetX: 33,
+        targetZ: 287,
+        radius: 38,
         enemyCount: 4
       },
       {
         title: 'Stáhni se do Parku Lužánky',
-        hint: 'Uklidni situaci u pavilonu v Parku Lužánky',
+        hint: 'Uklidni situaci na severu v Parku Lužánky (ulice Lužánecká)',
         type: 'goto',
-        targetX: 40,
-        targetZ: -265,
-        radius: 16
+        targetX: -109,
+        targetZ: -1000,
+        radius: 24
       }
     ]
   }
@@ -113,43 +113,40 @@ export class MissionAndCollectibleSystem {
   public enemiesRemaining = 0;
   private enemiesSpawnedForStep = false;
 
-  // 3D glowing mission beacon cylinder + ring
   private beaconGroup = new THREE.Group();
   private beaconRing: THREE.Mesh;
   private beaconBeam: THREE.Mesh;
 
   constructor(world: BrnoWorld) {
-    // Glowing GTA-style yellow/pink vertical mission beacon
     const ringMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
-    const beamMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.22, depthWrite: false });
-    this.beaconRing = new THREE.Mesh(new THREE.RingGeometry(2.4, 3.4, 28), ringMat);
+    const beamMat = new THREE.MeshBasicMaterial({ color: 0xfbbf24, transparent: true, opacity: 0.24, depthWrite: false });
+    this.beaconRing = new THREE.Mesh(new THREE.RingGeometry(2.8, 4.0, 28), ringMat);
     this.beaconRing.rotation.x = -Math.PI / 2;
-    this.beaconBeam = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 38, 18, 1, true), beamMat);
-    this.beaconBeam.position.y = 19;
+    this.beaconBeam = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 3.2, 65, 18, 1, true), beamMat);
+    this.beaconBeam.position.y = 32.5;
     this.beaconGroup.add(this.beaconRing, this.beaconBeam);
     this.group.add(this.beaconGroup);
 
-    // 10 Golden "Brněnské Kuličky" collectibles at iconic landmarks!
-    const ballGeo = new THREE.OctahedronGeometry(0.9, 1);
+    const ballGeo = new THREE.OctahedronGeometry(1.0, 1);
     const ballMat = new THREE.MeshStandardMaterial({
       color: 0xfbbf24,
       emissive: 0xf59e0b,
-      emissiveIntensity: 0.85,
+      emissiveIntensity: 0.9,
       metalness: 0.9,
       roughness: 0.15
     });
-    const haloGeo = new THREE.TorusGeometry(1.3, 0.08, 8, 24);
+    const haloGeo = new THREE.TorusGeometry(1.4, 0.09, 8, 24);
     const haloMat = new THREE.MeshBasicMaterial({ color: 0xff5e8e });
 
-    BRNO_LANDMARKS.forEach((lm, idx) => {
+    BRNO_LANDMARKS.forEach((lm) => {
       const cGroup = new THREE.Group();
-      const ox = lm.id === 'orloj' ? -10 : lm.x + (idx % 2 === 0 ? 6 : -6);
-      const oz = lm.id === 'orloj' ? 2 : lm.z + 6;
+      const ox = lm.x;
+      const oz = lm.z;
       const baseY = world.getSurfaceHeight(ox, oz).y;
       const orb = new THREE.Mesh(ballGeo, ballMat);
       const halo = new THREE.Mesh(haloGeo, haloMat);
       cGroup.add(orb, halo);
-      cGroup.position.set(ox, baseY + 1.8, oz);
+      cGroup.position.set(ox, baseY + 1.9, oz);
       this.group.add(cGroup);
 
       this.collectibles.push({
@@ -157,7 +154,7 @@ export class MissionAndCollectibleSystem {
         name: `Kulička: ${lm.name}`,
         x: ox,
         z: oz,
-        yOffset: baseY + 1.8,
+        yOffset: baseY + 1.9,
         collected: false,
         mesh: cGroup
       });
@@ -185,9 +182,7 @@ export class MissionAndCollectibleSystem {
   }
 
   public notifyHostileKilled(): void {
-    if (this.enemiesRemaining > 0) {
-      this.enemiesRemaining--;
-    }
+    if (this.enemiesRemaining > 0) this.enemiesRemaining--;
   }
 
   public update(
@@ -208,9 +203,8 @@ export class MissionAndCollectibleSystem {
     }
   ): { promptText: string } {
     let promptText = '';
-
-    // 1. Animate & check 10 Golden Brno Kuličky
     let collectedCount = 0;
+
     for (const c of this.collectibles) {
       if (c.collected) {
         collectedCount++;
@@ -220,7 +214,7 @@ export class MissionAndCollectibleSystem {
         c.mesh.rotation.y = time * 2.2;
         c.mesh.position.y = c.yOffset + Math.sin(time * 3.1 + c.x) * 0.35;
       }
-      if (Math.hypot(playerX - c.x, playerZ - c.z) < 3.4) {
+      if (Math.hypot(playerX - c.x, playerZ - c.z) < 4.2) {
         c.collected = true;
         if (c.mesh) c.mesh.visible = false;
         collectedCount++;
@@ -228,7 +222,6 @@ export class MissionAndCollectibleSystem {
       }
     }
 
-    // 2. Active Mission Step logic
     const mission = this.getCurrentMission();
     const step = this.getCurrentStep();
     const target = this.getTargetPosition();
@@ -238,10 +231,9 @@ export class MissionAndCollectibleSystem {
       return { promptText };
     }
 
-    // Update 3D beacon visuals
     this.beaconGroup.visible = true;
     const groundY = world.getSurfaceHeight(target.x, target.z).y;
-    this.beaconGroup.position.set(target.x, groundY + 0.2, target.z);
+    this.beaconGroup.position.set(target.x, groundY + 0.25, target.z);
     this.beaconRing.rotation.z = time * 1.8;
     const pulse = 1 + Math.sin(time * 4) * 0.14;
     this.beaconRing.scale.set(pulse, pulse, 1);
@@ -252,9 +244,7 @@ export class MissionAndCollectibleSystem {
     if (step.type === 'interact') {
       if (dist < step.radius) {
         promptText = 'Stiskni [E] pro zachycení kuličky z Orloje!';
-        if (interactPressed) {
-          stepComplete = true;
-        }
+        if (interactPressed) stepComplete = true;
       }
     } else if (step.type === 'goto') {
       if (dist < step.radius) stepComplete = true;
@@ -266,9 +256,7 @@ export class MissionAndCollectibleSystem {
         promptText = 'Pro splnění úkolu musíš být ve vozidle [F]!';
       }
     } else if (step.type === 'escape_police') {
-      if (wanted === 0) {
-        stepComplete = true;
-      }
+      if (wanted === 0) stepComplete = true;
     } else if (step.type === 'checkpoints' && step.checkpoints) {
       if (dist < step.radius) {
         this.checkpointIdx++;
@@ -280,7 +268,7 @@ export class MissionAndCollectibleSystem {
         }
       }
     } else if (step.type === 'eliminate') {
-      if (!this.enemiesSpawnedForStep && dist < 75) {
+      if (!this.enemiesSpawnedForStep && dist < 85) {
         this.enemiesSpawnedForStep = true;
         const cnt = step.enemyCount ?? 4;
         this.enemiesRemaining = cnt;
@@ -300,12 +288,9 @@ export class MissionAndCollectibleSystem {
         this.missionIdx++;
         this.stepIdx = 0;
         this.checkpointIdx = 0;
-        if (this.missionIdx >= BRNO_MISSIONS.length) {
-          this.allMissionsDone = true;
-        }
+        if (this.missionIdx >= BRNO_MISSIONS.length) this.allMissionsDone = true;
       } else {
-        const nextStep = mission.steps[this.stepIdx];
-        callbacks.onMissionStep(nextStep.title);
+        callbacks.onMissionStep(mission.steps[this.stepIdx].title);
       }
     }
 

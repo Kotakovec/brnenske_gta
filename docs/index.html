@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GTA VI: BRNO | 3D Otevřený svět Moravské metropole</title>
     <meta name="description" content="3D open-world akční hra ve stylu GTA 6 zasazená do Brna: Náměstí Svobody, Orloj, Hrad Špilberk, Petrov, AZ Tower, šaliny DPMB a honičky s Policií ČR." />
-    <script type="module" crossorigin src="./assets/index-p66S3jOp.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-KM_q-UAO.css">
+    <script type="module" crossorigin src="./assets/index-oZIAIs4z.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-R9nVEmu6.css">
   </head>
   <body>
     <main id="game-root" aria-label="3D herní plátno GTA VI Brno">
@@ -18,20 +18,23 @@
       <!-- START SCREEN OVERLAY (shows over live 3D drone orbit of Brno) -->
       <section id="start-screen" class="start-screen" aria-labelledby="game-title">
         <div class="start-card">
-          <p class="eyebrow">OPEN-WORLD 3D SANDBOX</p>
+          <p class="eyebrow">OPEN-WORLD 3D • 1:1 MAPA BRNA (OSM)</p>
           <h1 id="game-title" class="game-title">
             GTA VI <span class="title-accent">BRNO</span>
           </h1>
           <p class="start-desc">
-            Prozkoumej 3D Brno od Brněnského orloje přes Hrad Špilberk a Petrov až po AZ Tower.
-            Řiď sporťáky, vyhýbej se šalinám DPMB, plň mise a unikni Policii ČR.
+            Reálná 1:1 mapa Brna podle OpenStreetMap: 237 skutečných ulic, 4 762 budov,
+            Náměstí Svobody, Orloj, Hrad Špilberk, Petrov, Hlavní nádraží, Lužánky i 111m AZ Tower.
           </p>
 
           <div class="start-actions">
-            <button type="button" id="btn-play" class="btn btn-primary">Vyrazit do Brna</button>
-            <button type="button" id="btn-start-map" class="btn btn-secondary">Mapa Brna</button>
-            <button type="button" id="btn-start-controls" class="btn btn-secondary">Ovládání a nastavení</button>
+            <button type="button" id="btn-play" class="btn btn-primary" disabled>Načítám 1:1 mapu Brna...</button>
+            <button type="button" id="btn-start-map" class="btn btn-secondary" disabled>Mapa Brna</button>
+            <button type="button" id="btn-start-controls" class="btn btn-secondary" disabled>Ovládání a nastavení</button>
           </div>
+          <p id="load-status" class="load-status" role="status" aria-live="polite">
+            Načítám 237 brněnských ulic a 4 762 budov z 1:1 OSM dat...
+          </p>
 
           <ul class="controls-strip" aria-label="Rychlý přehled ovládání">
             <li><kbd>W A S D</kbd> Pohyb / Jízda</li>
@@ -89,8 +92,9 @@
         <aside class="hud-status" aria-label="Stav hráče">
           <div id="hud-wanted" class="wanted-stars" aria-label="Úroveň hledanosti Policie ČR"></div>
           <div class="status-money" id="hud-money">5 000 Kč</div>
+          <div class="status-street" id="hud-street">náměstí Svobody</div>
           <div class="status-sub">
-            <span id="hud-district">Náměstí Svobody</span>
+            <span id="hud-district">Brno-střed</span>
             <span aria-hidden="true">•</span>
             <span id="hud-clock">17:48</span>
           </div>
