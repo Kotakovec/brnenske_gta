@@ -107,9 +107,9 @@ export class BrnoGameEngine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.FogExp2(0x2d1e3b, 0.00105);
+    this.scene.fog = new THREE.FogExp2(0x2d1e3b, 0.00072);
 
-    this.camera = new THREE.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.4, 1750);
+    this.camera = new THREE.PerspectiveCamera(62, container.clientWidth / container.clientHeight, 0.4, 2400);
 
     this.skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
@@ -140,7 +140,7 @@ export class BrnoGameEngine {
         }
       `
     });
-    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(1550, 24, 16), this.skyMat);
+    const skyDome = new THREE.Mesh(new THREE.SphereGeometry(2250, 24, 16), this.skyMat);
     this.scene.add(skyDome);
 
     this.hemiLight = new THREE.HemisphereLight(0xffb59b, 0x26293d, 0.85);
@@ -267,9 +267,11 @@ export class BrnoGameEngine {
     this.started = true;
     this.paused = false;
     this.audio.unlock();
+    const osm = this.world.spatial.data;
+    const streets = new Set(osm.roads.map(r => r.n).filter(Boolean)).size;
     this.onBanner({
-      title: 'VÍTEJ V BRNĚ 1:1',
-      subtitle: 'náměstí Svobody • 237 reálných ulic a 4 762 budov',
+      title: 'VÍTEJ V BRNĚ 1:1 (4,8 × 5,6 km)',
+      subtitle: `náměstí Svobody • ${streets} reálných ulic a ${osm.buildings.length.toLocaleString('cs-CZ')} budov`,
       accent: 'pink'
     });
   }

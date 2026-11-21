@@ -272,16 +272,21 @@ export class VehicleManager {
     this.spawnVehicle('van', 295, 465, -Math.PI * 0.4);                           // Hlavní nádraží Starobrno van
     this.spawnVehicle('supercar', -1082, 584, 0, { color: 0xa855f7 });            // Mendlovo náměstí
     this.spawnVehicle('suv', -666, 84, Math.PI * 0.5, { color: 0xdc2626 });       // Hrad Špilberk courtyard
+    this.spawnVehicle('supercar', -1804, 743, 0, { color: 0xf43f5e });            // Výstaviště BVV
+    this.spawnVehicle('octavia', -1738, -1012, 0, { color: 0x38bdf8 });           // Kraví hora Hvězdárna
+    this.spawnVehicle('suv', 567, -1337, 0.4, { color: 0xf8fafc });               // Vila Tugendhat
+    this.spawnVehicle('police', 1870, -703, -Math.PI * 0.5);                      // Židenice Stará osada
+    this.spawnVehicle('supercar', 15, -1826, Math.PI, { color: 0xfbbf24 });       // Královo Pole / Boby
 
-    // Spawn 28 AI Traffic cars driving directly along REAL 1:1 OSM Brno streets!
+    // Spawn 45 AI Traffic cars driving directly along REAL 1:1 OSM Brno streets across 5x5.5 km!
     const roads = this.world.spatial.drivableRoads.filter(r => r.p.length >= 8);
     const trafficKinds: VehicleKind[] = ['octavia', 'classic', 'suv', 'van', 'octavia', 'supercar'];
     const trafficColors = [0xe2e8f0, 0x3b82f6, 0xef4444, 0x10b981, 0xf59e0b, 0x6366f1, 0x475569];
 
     if (roads.length > 0) {
-      const step = Math.max(1, Math.floor(roads.length / 28));
+      const step = Math.max(1, Math.floor(roads.length / 45));
       let spawned = 0;
-      for (let i = 0; i < roads.length && spawned < 28; i += step) {
+      for (let i = 0; i < roads.length && spawned < 45; i += step) {
         const road = roads[i];
         const x1 = road.p[0], z1 = road.p[1];
         const x2 = road.p[2], z2 = road.p[3];

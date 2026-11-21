@@ -6,23 +6,25 @@ const ORIGIN_LON = 16.60830;
 const METERS_PER_LAT = 111210;
 const METERS_PER_LON = 111320 * Math.cos((ORIGIN_LAT * Math.PI) / 180);
 
-// True 1:1 Brno bounding box (~2.4 km x 2.78 km):
-// Covers Park Lužánky (N) -> AZ Tower & Svratka (S), Mendlovo nám. & Špilberk (W) -> Cejl & Křenová (E)
+// 2x expanded true 1:1 Brno bounding box (~4.8 km x 5.56 km = ~26.7 km^2):
+// N: Královo Pole / Ponava / Černá Pole (49.2195)
+// S: Komárov / Horní Heršpice / Vídeňská / AZ Tower (49.1695)
+// W: BVV Výstaviště / Pisárky / Kraví hora / Žabovřesky (16.5745)
+// E: Židenice / Stará osada / Černovice / Svitava (16.6405)
 const BBOX = {
-  minLat: 49.1815,
-  maxLat: 49.2065,
-  minLon: 16.5915,
-  maxLon: 16.6245
+  minLat: 49.1695,
+  maxLat: 49.2195,
+  minLon: 16.5745,
+  maxLon: 16.6405
 };
 
 function project(lat, lon) {
-  const x = Math.round(((lon - ORIGIN_LON) * METERS_PER_LON) * 2) / 2;
-  const z = Math.round(((ORIGIN_LAT - lat) * METERS_PER_LAT) * 2) / 2;
+  const x = Math.round((lon - ORIGIN_LON) * METERS_PER_LON);
+  const z = Math.round((ORIGIN_LAT - lat) * METERS_PER_LAT);
   return [x, z];
 }
 
-// Douglas-Peucker polyline simplification (in meters) to keep file compact while preserving exact 1:1 shapes
-function simplify(pts, eps = 0.9) {
+function simplify(pts, eps = 1.4) {
   if (pts.length <= 2) return pts;
   let maxDist = 0;
   let idx = 0;
@@ -65,17 +67,25 @@ function flatten(pts) {
 const allNodes = new Map();
 const allWays = new Map();
 
-async function fetchTile(minLon, minLat, maxLon, maxLat, depth = 0) {
+async function fetchTile(minLon, minLat, maxLon, maxLat, depth = 0, retries = 0) {
   const url = `https://api.openstreetmap.org/api/0.6/map.json?bbox=${minLon.toFixed(5)},${minLat.toFixed(5)},${maxLon.toFixed(5)},${maxLat.toFixed(5)}`;
-  const res = await fetch(url, {
-    headers: {
-      'User-Agent': 'BrnoGTAGameBuilder/1.0 (https://github.com/Kotakovec/brnenske_gta)',
-      Accept: 'application/json'
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: {
+        'User-Agent': 'BrnoGTAGameBuilder/2.0 (https://github.com/Kotakovec/brnenske_gta)',
+        Accept: 'application/json'
+      }
+    });
+  } catch (err) {
+    if (retries < 4) {
+      await new Promise(r => setTimeout(r, 1500));
+      return fetchTile(minLon, minLat, maxLon, maxLat, depth, retries + 1);
     }
-  });
+    throw err;
+  }
 
   if (res.status === 400 && depth < 2) {
-    // Too many nodes in this tile — cleanly subdivide into 4 quadrants
     const midLon = (minLon + maxLon) / 2;
     const midLat = (minLat + maxLat) / 2;
     await fetchTile(minLon, minLat, midLon, midLat, depth + 1);
@@ -85,9 +95,9 @@ async function fetchTile(minLon, minLat, maxLon, maxLat, depth = 0) {
     return;
   }
 
-  if (res.status === 429 || res.status >= 500) {
-    await new Promise(r => setTimeout(r, 1200));
-    return fetchTile(minLon, minLat, maxLon, maxLat, depth);
+  if ((res.status === 429 || res.status >= 500) && retries < 5) {
+    await new Promise(r => setTimeout(r, 1600 * (retries + 1)));
+    return fetchTile(minLon, minLat, maxLon, maxLat, depth, retries + 1);
   }
 
   if (!res.ok) {
@@ -105,16 +115,15 @@ async function fetchTile(minLon, minLat, maxLon, maxLat, depth = 0) {
 }
 
 async function main() {
-  const rows = 5;
-  const cols = 5;
+  const rows = 8;
+  const cols = 8;
   const dLat = (BBOX.maxLat - BBOX.minLat) / rows;
   const dLon = (BBOX.maxLon - BBOX.minLon) / cols;
 
-  console.log(`Fetching 1:1 Brno OpenStreetMap data (${rows}x${cols} tiles)...`);
+  console.log(`Fetching 2x expanded 1:1 Brno OSM data (${rows}x${cols} = ${rows * cols} tiles)...`);
   let done = 0;
   const total = rows * cols;
 
-  // Fetch 3 tiles concurrently with polite pacing
   const tasks = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -127,19 +136,21 @@ async function main() {
     }
   }
 
-  const concurrency = 3;
+  const concurrency = 4;
   let cursor = 0;
   async function worker() {
     while (cursor < tasks.length) {
       const t = tasks[cursor++];
       await fetchTile(t.minLon, t.minLat, t.maxLon, t.maxLat);
       done++;
-      process.stdout.write(`\rTiles fetched: ${done}/${total} (nodes: ${allNodes.size}, ways: ${allWays.size})`);
-      await new Promise(r => setTimeout(r, 120));
+      if (done % 4 === 0 || done === total) {
+        console.log(`Tiles fetched: ${done}/${total} (nodes: ${allNodes.size}, ways: ${allWays.size})`);
+      }
+      await new Promise(r => setTimeout(r, 100));
     }
   }
   await Promise.all(Array.from({ length: concurrency }, () => worker()));
-  console.log('\nProcessing OSM geometry...');
+  console.log('Processing expanded 1:1 OSM geometry...');
 
   const roadWidths = {
     motorway: 15,
@@ -154,8 +165,7 @@ async function main() {
     unclassified: 6.5,
     living_street: 6.5,
     pedestrian: 9.5,
-    service: 4.5,
-    track: 4
+    service: 4.5
   };
 
   const roads = [];
@@ -196,14 +206,17 @@ async function main() {
     const pts = getWayPts(way);
     if (pts.length < 2 || !inBounds(pts)) continue;
 
-    // 1. Roads & Named Streets
+    // 1. Roads & Named Streets (skip tiny unnamed driveway stubs in outer suburbs)
     if (tags.highway && roadWidths[tags.highway]) {
+      if (tags.highway === 'service' && !tags.name && (tags.service === 'parking_aisle' || tags.service === 'driveway')) {
+        continue;
+      }
       const isArea = tags.area === 'yes' && pts.length >= 4 && pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
       if (isArea && tags.highway === 'pedestrian') {
-        const simp = simplify(pts.slice(0, -1), 1.4);
+        const simp = simplify(pts.slice(0, -1), 1.8);
         if (simp.length >= 3) plazas.push({ n: tags.name || '', p: flatten(simp) });
       } else {
-        const simp = simplify(pts, 1.1);
+        const simp = simplify(pts, 1.5);
         if (simp.length >= 2) {
           let w = roadWidths[tags.highway];
           if (tags.lanes) {
@@ -213,7 +226,7 @@ async function main() {
           roads.push({
             n: tags.name || '',
             t: tags.highway,
-            w: Math.round(w * 2) / 2,
+            w: Math.round(w),
             p: flatten(simp)
           });
         }
@@ -223,24 +236,19 @@ async function main() {
 
     // 2. Real DPMB Tram Tracks
     if (tags.railway === 'tram') {
-      const simp = simplify(pts, 1.2);
-      if (simp.length >= 2) {
-        trams.push(flatten(simp));
-      }
+      const simp = simplify(pts, 1.8);
+      if (simp.length >= 2) trams.push(flatten(simp));
       continue;
     }
 
-    // 3. Buildings (closed polygons with real height / levels!)
+    // 3. Buildings (closed polygons >= 30 m^2)
     if (tags.building && pts.length >= 4) {
       const isClosed = pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1];
       const poly = isClosed ? pts.slice(0, -1) : pts;
-      const simp = simplify(poly, 1.0);
+      const simp = simplify(poly, 1.4);
       if (simp.length < 3) continue;
 
-      // Compute approximate footprint area & center to filter tiny sheds (<18 m^2)
-      let area = 0;
-      let cx = 0;
-      let cz = 0;
+      let area = 0, cx = 0, cz = 0;
       for (let i = 0; i < simp.length; i++) {
         const [x1, z1] = simp[i];
         const [x2, z2] = simp[(i + 1) % simp.length];
@@ -249,15 +257,14 @@ async function main() {
         cz += z1;
       }
       area = Math.abs(area) * 0.5;
-      if (area < 20) continue;
+      if (area < 30) continue;
       cx /= simp.length;
       cz /= simp.length;
 
-      // Skip exact footprint where our ultra-detailed custom hero monuments stand (AZ Tower, Petrov Cathedral, Orloj)
-      if (Math.hypot(cx - (-81), cz - 1428) < 35) continue; // AZ Tower custom skyscraper
-      if (Math.hypot(cx - (-84), cz - 459) < 30) continue;  // Petrov Cathedral custom twin spires
+      // Reserve exact spots for custom detailed hero monuments
+      if (Math.hypot(cx - (-81), cz - 1428) < 35) continue; // AZ Tower
+      if (Math.hypot(cx - (-84), cz - 459) < 30) continue;  // Petrov Cathedral
 
-      // Real height from OSM height or building:levels
       let h = 0;
       if (tags.height) {
         const parsed = parseFloat(String(tags.height).replace(',', '.'));
@@ -269,16 +276,19 @@ async function main() {
       }
       if (!h) {
         const distCenter = Math.hypot(cx, cz);
-        h = distCenter < 550 ? 15 + ((Math.abs(Math.round(cx + cz)) % 4) * 2.5) : 11 + ((Math.abs(Math.round(cx * 3 + cz)) % 4) * 2.5);
+        h = distCenter < 650
+          ? 15 + ((Math.abs(Math.round(cx + cz)) % 4) * 2.5)
+          : distCenter < 1500
+            ? 12 + ((Math.abs(Math.round(cx * 3 + cz)) % 4) * 2.5)
+            : 9 + ((Math.abs(Math.round(cx * 5 + cz)) % 4) * 2.0);
       }
-      h = Math.min(68, Math.max(4.5, Math.round(h * 10) / 10));
+      h = Math.min(68, Math.max(4.5, Math.round(h)));
 
-      // Architectural style palette
-      let c = Math.abs(Math.round(cx * 7 + cz * 13)) % 5; // 0..4 Moravian historic colors
+      let c = Math.abs(Math.round(cx * 7 + cz * 13)) % 5;
       if (tags.building === 'commercial' || tags.building === 'office' || tags.building === 'retail' || tags.building === 'industrial' || h > 28) {
-        c = 5; // Modern glass / office
+        c = 5;
       } else if (tags.building === 'church' || tags.building === 'cathedral' || tags.building === 'castle' || tags.historic === 'castle') {
-        c = 6; // Historic stone / heritage
+        c = 6;
       }
 
       buildings.push({ h, c, p: flatten(simp) });
@@ -291,21 +301,21 @@ async function main() {
       pts.length >= 4
     ) {
       const poly = pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1] ? pts.slice(0, -1) : pts;
-      const simp = simplify(poly, 2.2);
+      const simp = simplify(poly, 3.0);
       if (simp.length >= 3) parks.push(flatten(simp));
       continue;
     }
 
-    // 5. Water (Svratka river polygons & ponds)
+    // 5. Water (Svratka & Svitava rivers + ponds)
     if ((tags.natural === 'water' || tags.waterway === 'riverbank') && pts.length >= 4) {
       const poly = pts[0][0] === pts[pts.length - 1][0] && pts[0][1] === pts[pts.length - 1][1] ? pts.slice(0, -1) : pts;
-      const simp = simplify(poly, 2.0);
+      const simp = simplify(poly, 2.5);
       if (simp.length >= 3) water.push(flatten(simp));
       continue;
     }
 
     if (tags.waterway === 'river' || tags.waterway === 'stream') {
-      const simp = simplify(pts, 2.5);
+      const simp = simplify(pts, 3.0);
       if (simp.length >= 2) {
         waterways.push({ w: tags.waterway === 'river' ? 26 : 6, p: flatten(simp) });
       }
@@ -330,7 +340,10 @@ async function main() {
   fs.writeFileSync(outPath, json);
 
   const namedStreets = new Set(roads.map(r => r.n).filter(Boolean));
+  const widthKm = ((bounds.maxX - bounds.minX) / 1000).toFixed(2);
+  const heightKm = ((bounds.maxZ - bounds.minZ) / 1000).toFixed(2);
   console.log(`\nDONE! Wrote ${outPath} (${(json.length / 1024).toFixed(1)} KB)`);
+  console.log(`  1:1 Extent: ${widthKm} km x ${heightKm} km (bounds: ${JSON.stringify(bounds)})`);
   console.log(`  Roads: ${roads.length} segments (${namedStreets.size} unique named Brno streets!)`);
   console.log(`  Tram tracks: ${trams.length} segments`);
   console.log(`  Buildings: ${buildings.length} real 1:1 footprints`);

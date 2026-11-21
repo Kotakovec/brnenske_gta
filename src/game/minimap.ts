@@ -18,7 +18,10 @@ const KEY_STREET_LABELS = new Set([
   'Koliště', 'Nádražní', 'Zelný trh', 'Moravské náměstí', 'Pekařská',
   'Cejl', 'Lidická', 'Veveří', 'Úvoz', 'Heršpická', 'Poříčí',
   'Mendlovo náměstí', 'Křenová', 'Dornych', 'Nové sady', 'Hybešova',
-  'Milady Horákové', 'Rooseveltova', 'Benešova', 'Bratislavská', 'Opuštěná'
+  'Milady Horákové', 'Rooseveltova', 'Benešova', 'Bratislavská', 'Opuštěná',
+  'Hlinky', 'Pisárecká', 'Bauerova', 'Kounicova', 'Štefánikova',
+  'Černopolní', 'Vranovská', 'Olomoucká', 'Vídeňská', 'Jihlavská',
+  'Žabovřeská', 'Táborská', 'Gajdošova', 'Sportovní', 'Údolní', 'Kotlářská'
 ]);
 
 export class BrnoMinimapRenderer {
@@ -27,12 +30,12 @@ export class BrnoMinimapRenderer {
   private fullCanvas: HTMLCanvasElement;
   private fullCtx: CanvasRenderingContext2D;
 
-  // High-res offscreen pre-rendered 1:1 Brno OSM vector canvas (rendered ONCE for 60 FPS blitting!)
+  // High-res offscreen pre-rendered 1:1 Brno OSM vector canvas (2560x2560 for 5x5.5 km detail!)
   private baseMap: HTMLCanvasElement;
   private mapMinX: number;
   private mapMinZ: number;
   private mapSpan: number;
-  private mapPx = 2048;
+  private mapPx = 2560;
 
   constructor(hudCanvas: HTMLCanvasElement, fullCanvas: HTMLCanvasElement, osm: BrnoOSMData) {
     this.hudCanvas = hudCanvas;
@@ -143,7 +146,7 @@ export class BrnoMinimapRenderer {
 
     // 7. Bake Major Real Brno Street Names onto the map!
     const placedLabels = new Set<string>();
-    ctx.font = '700 18px Inter, system-ui, sans-serif';
+    ctx.font = '700 24px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const r of osm.roads) {
@@ -151,7 +154,7 @@ export class BrnoMinimapRenderer {
       placedLabels.add(r.n);
       const mid = Math.floor(r.p.length / 4) * 2;
       const [bx, by] = this.worldToBase(r.p[mid], r.p[mid + 1]);
-      ctx.lineWidth = 5;
+      ctx.lineWidth = 6;
       ctx.strokeStyle = 'rgba(9, 13, 22, 0.9)';
       ctx.strokeText(r.n, bx, by);
       ctx.fillStyle = '#e2e8f0';

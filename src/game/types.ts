@@ -128,15 +128,15 @@ export interface GameHUDState {
   fps: number;
 }
 
-// True 1:1 meter bounds around Náměstí Svobody (49.19518°N, 16.60830°E)
+// True 1:1 meter bounds around Náměstí Svobody (49.19518°N, 16.60830°E) — 2x expanded (~4.8 km x 5.56 km!)
 export const WORLD_BOUNDS = {
-  minX: -1210,
-  maxX: 1165,
-  minZ: -1245,
-  maxZ: 1505
+  minX: -2445,
+  maxX: 2330,
+  minZ: -2690,
+  maxZ: 2840
 } as const;
 
-// Real 1:1 GPS-projected Brno landmarks (verified clear of OSM building footprints!)
+// Real 1:1 GPS-projected Brno landmarks across the entire 4.8 x 5.56 km city!
 export const BRNO_LANDMARKS: Landmark[] = [
   { id: 'orloj', name: 'Náměstí Svobody & Orloj', subtitle: 'Brněnský orloj, střed města 1:1', x: -2, z: 4, color: '#ff5e8e', icon: 'clock' },
   { id: 'spilberk', name: 'Hrad Špilberk', subtitle: 'Královský hrad a pevnost na kopci', x: -666, z: 84, color: '#f59e0b', icon: 'castle' },
@@ -147,7 +147,12 @@ export const BRNO_LANDMARKS: Landmark[] = [
   { id: 'aztower', name: 'AZ Tower (Heršpická)', subtitle: 'Nejvyšší mrakodrap ČR (111 m)', x: -83, z: 1380, color: '#fb7185', icon: 'tower' },
   { id: 'luzanky', name: 'Park Lužánky', subtitle: 'Nejstarší městský park v Česku', x: -109, z: -1000, color: '#10b981', icon: 'park' },
   { id: 'mendlak', name: 'Mendlovo náměstí', subtitle: 'Staré Brno, bazilika a pivovar', x: -1082, z: 584, color: '#c084fc', icon: 'expo' },
-  { id: 'spray', name: 'Autolakýrna Cejl', subtitle: 'Oprava, přelakování a smazání PČR hvězd', x: 720, z: -201, color: '#06b6d4', icon: 'spray' }
+  { id: 'spray', name: 'Autolakýrna Cejl', subtitle: 'Oprava, přelakování a smazání PČR hvězd', x: 720, z: -201, color: '#06b6d4', icon: 'spray' },
+  { id: 'bvv', name: 'Brněnské výstaviště (BVV)', subtitle: 'Pavilon A, Pisárky a výstaviště', x: -1804, z: 743, color: '#e879f9', icon: 'expo' },
+  { id: 'kravihora', name: 'Hvězdárna Kraví hora', subtitle: 'Kopec, planetárium a výhled na Brno', x: -1738, z: -1025, color: '#60a5fa', icon: 'park' },
+  { id: 'tugendhat', name: 'Vila Tugendhat', subtitle: 'UNESCO funkcionalistická vila, Černá Pole', x: 567, z: -1337, color: '#f4f4f5', icon: 'castle' },
+  { id: 'krpole', name: 'Královo Pole & Boby', subtitle: 'Severní Brno, Sportovní a Ponava', x: 15, z: -1826, color: '#fb923c', icon: 'tower' },
+  { id: 'zidenice', name: 'Židenice (Stará osada)', subtitle: 'Východní Brno za řekou Svitavou', x: 1870, z: -703, color: '#2dd4bf', icon: 'train' }
 ];
 
 export const BRNO_DISTRICTS: District[] = [
@@ -158,12 +163,22 @@ export const BRNO_DISTRICTS: District[] = [
   { name: 'Moravské náměstí', x: -20, z: -330, radius: 170 },
   { name: 'Janáčkovo divadlo', x: 220, z: -330, radius: 165 },
   { name: 'Hlavní nádraží', x: 310, z: 515, radius: 190 },
-  { name: 'Staré Brno (Mendlák)', x: -1040, z: 580, radius: 320 },
+  { name: 'Staré Brno (Mendlák)', x: -1040, z: 580, radius: 340 },
+  { name: 'Pisárky & Výstaviště BVV', x: -1850, z: 740, radius: 520 },
+  { name: 'Kraví hora & Masarykova čtvrť', x: -1680, z: -850, radius: 560 },
+  { name: 'Žabovřesky', x: -1850, z: -1850, radius: 680 },
   { name: 'Veveří', x: -460, z: -560, radius: 420 },
-  { name: 'Park Lužánky & Ponava', x: -60, z: -1040, radius: 340 },
-  { name: 'Zábrdovice & Cejl', x: 760, z: -200, radius: 420 },
-  { name: 'Křenová & Trnitá', x: 780, z: 560, radius: 440 },
-  { name: 'Štýřice & AZ Tower', x: -100, z: 1340, radius: 380 },
+  { name: 'Park Lužánky & Ponava', x: -60, z: -1040, radius: 360 },
+  { name: 'Královo Pole', x: -150, z: -2050, radius: 720 },
+  { name: 'Černá Pole & Vila Tugendhat', x: 750, z: -1450, radius: 680 },
+  { name: 'Husovice', x: 1380, z: -1450, radius: 550 },
+  { name: 'Zábrdovice & Cejl', x: 760, z: -200, radius: 440 },
+  { name: 'Židenice & Stará osada', x: 1850, z: -550, radius: 680 },
+  { name: 'Křenová & Trnitá', x: 780, z: 560, radius: 480 },
+  { name: 'Komárov & Černovice', x: 1250, z: 1650, radius: 850 },
+  { name: 'Štýřice & AZ Tower', x: -100, z: 1340, radius: 440 },
+  { name: 'Horní Heršpice & Vídeňská', x: -400, z: 2250, radius: 750 },
+  { name: 'Bohunice & Lískovec', x: -1750, z: 2050, radius: 750 },
   { name: 'Nábřeží Svratky', x: -550, z: 1100, radius: 340 }
 ];
 
@@ -297,6 +312,17 @@ export function getTerrainHeight(x: number, z: number): number {
     } else {
       const t = (pDist - 42) / (120 - 42);
       h = Math.max(h, 15.5 * 0.5 * (1 + Math.cos(Math.PI * t)));
+    }
+  }
+
+  // Kraví hora hill (real observatory hill at -1738, -1025 rising up to +42m!)
+  const kDist = Math.hypot(x - (-1738), z - (-1025));
+  if (kDist < 420) {
+    if (kDist <= 125) {
+      h = Math.max(h, 42);
+    } else {
+      const t = (kDist - 125) / (420 - 125);
+      h = Math.max(h, 42 * 0.5 * (1 + Math.cos(Math.PI * t)));
     }
   }
 

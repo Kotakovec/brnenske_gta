@@ -175,13 +175,13 @@ export function buildBrnoWorld(textures: BrnoTextures, osm: BrnoOSMData): BrnoWo
   const orlojRings: THREE.Mesh[] = [];
 
   // -------------------------------------------------------
-  // 1. 1:1 3D TERRAIN GROUND PLANE (2.8 km x 3.1 km)
+  // 1. 1:1 3D TERRAIN GROUND PLANE (2x expanded: 5.5 km x 6.2 km)
   // -------------------------------------------------------
-  const wSize = 2900;
-  const hSize = 3200;
-  const terrainGeo = new THREE.PlaneGeometry(wSize, hSize, 130, 130);
+  const wSize = 5600;
+  const hSize = 6200;
+  const terrainGeo = new THREE.PlaneGeometry(wSize, hSize, 150, 150);
   terrainGeo.rotateX(-Math.PI / 2);
-  terrainGeo.translate(-20, 0, 130);
+  terrainGeo.translate(-60, 0, 80);
 
   const posAttr = terrainGeo.attributes.position;
   const colors = new Float32Array(posAttr.count * 3);
@@ -693,9 +693,23 @@ export function buildBrnoWorld(textures: BrnoTextures, osm: BrnoOSMData): BrnoWo
     });
   }
 
-  // G. BRNO HLAVNÍ NÁDRAŽÍ & AUTOLAKÝRNA CEJL SIGNS
+  // G. BRNO HLAVNÍ NÁDRAŽÍ, BVV, HVĚZDÁRNA KRAVÍ HORA & AUTOLAKÝRNA CEJL
   makeNeonSign('BRNO HLAVNÍ NÁDRAŽÍ', 318, 16, 495, -0.5, 26, 3.8, '#1e293b', '#38bdf8', 0x06b6d4);
   makeNeonSign('NÁMĚSTÍ SVOBODY', 0, 12, -55, 0, 18, 2.8, '#2e1065', '#f472b6', 0xec4899);
+  makeNeonSign('VÝSTAVIŠTĚ BRNO (BVV)', -1804, 22, 743, 0, 26, 3.8, '#1e1b2e', '#e879f9', 0xc084fc);
+  makeNeonSign('VILA TUGENDHAT • UNESCO', 567, 15, -1337, 0.3, 22, 3.2, '#0f172a', '#f8fafc', 0x38bdf8);
+
+  // Hvězdárna a planetárium Brno (Kraví hora summit -1738, -1025)
+  {
+    const khY = getTerrainHeight(-1738, -1025);
+    const obsMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.32, metalness: 0.25 });
+    const domeBase = new THREE.Mesh(new THREE.CylinderGeometry(11, 12, 8, 20), obsMat);
+    domeBase.position.set(-1738, khY + 4, -1025);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(11, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), obsMat);
+    dome.position.set(-1738, khY + 8, -1025);
+    group.add(domeBase, dome);
+    makeNeonSign('HVĚZDÁRNA KRAVÍ HORA', -1738, khY + 21, -1012, 0, 22, 3.2, '#0b1120', '#60a5fa', 0x3b82f6);
+  }
 
   // Autolakýrna Cejl (Pay 'n' Spray neon arch at 720, -201)
   {
@@ -780,8 +794,8 @@ export function buildBrnoWorld(textures: BrnoTextures, osm: BrnoOSMData): BrnoWo
       if (poly[i + 1] > maxZ) maxZ = poly[i + 1];
     }
     const approxArea = (maxX - minX) * (maxZ - minZ);
-    const count = Math.min(24, Math.floor(approxArea / 1400));
-    for (let k = 0; k < count && treePositions.length < 650; k++) {
+    const count = Math.min(20, Math.floor(approxArea / 1800));
+    for (let k = 0; k < count && treePositions.length < 1100; k++) {
       const tx = minX + rand() * (maxX - minX);
       const tz = minZ + rand() * (maxZ - minZ);
       if (spatial.pointInPoly(tx, tz, poly) && !spatial.hitsBuilding(tx, 5, tz)) {

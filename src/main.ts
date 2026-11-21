@@ -343,12 +343,14 @@ bindHold('tbtn-shoot', 'shoot');
   try {
     const osm = await loadBrnoOSMData();
     const streetCount = new Set(osm.roads.map(r => r.n).filter(Boolean)).size;
+    const widthKm = ((osm.bounds.maxX - osm.bounds.minX) / 1000).toFixed(1);
+    const heightKm = ((osm.bounds.maxZ - osm.bounds.minZ) / 1000).toFixed(1);
     engine = new BrnoGameEngine(mount, hudMinimap, fullMapCanvas, osm, updateHUD, showBanner);
     btnPlay.disabled = false;
     btnStartMap.disabled = false;
     btnStartControls.disabled = false;
     btnPlay.textContent = 'Vyrazit do Brna (1:1)';
-    loadStatus.textContent = `Mapa připravena: ${streetCount} reálných ulic, ${osm.buildings.length.toLocaleString('cs-CZ')} budov, ${osm.trams.length} kolejových úseků.`;
+    loadStatus.textContent = `Mapa ${widthKm} × ${heightKm} km připravena: ${streetCount.toLocaleString('cs-CZ')} reálných ulic, ${osm.buildings.length.toLocaleString('cs-CZ')} budov, ${osm.trams.length} kolejových úseků.`;
   } catch (err) {
     loadStatus.classList.add('error');
     loadStatus.textContent = `Chyba načítání 3D mapy Brna: ${err instanceof Error ? err.message : String(err)}. Zkontroluj podporu WebGL a obnov stránku.`;
