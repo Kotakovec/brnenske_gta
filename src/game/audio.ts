@@ -49,6 +49,8 @@ export class BrnoAudioEngine {
   private engineGain: GainNode | null = null;
   private sirenOsc: OscillatorNode | null = null;
   private sirenGain: GainNode | null = null;
+  private screechGain: GainNode | null = null;
+  private screechFilter: BiquadFilterNode | null = null;
   private muted = false;
   private volume = 0.45;
   private radioIndex = 0;
@@ -95,6 +97,25 @@ export class BrnoAudioEngine {
     this.sirenOsc.connect(this.sirenGain);
     this.sirenGain.connect(this.masterGain);
     this.sirenOsc.start();
+
+    // Realistic tire screech / slip synthesizer (resonant bandpass noise loop)
+    const bufLen = this.ctx.sampleRate * 2;
+    const noiseBuf = this.ctx.createBuffer(1, bufLen, this.ctx.sampleRate);
+    const ch = noiseBuf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) ch[i] = Math.random() * 2 - 1;
+    const screechSrc = this.ctx.createBufferSource();
+    screechSrc.buffer = noiseBuf;
+    screechSrc.loop = true;
+    this.screechFilter = this.ctx.createBiquadFilter();
+    this.screechFilter.type = 'bandpass';
+    this.screechFilter.frequency.value = 1450;
+    this.screechFilter.Q.value = 9.5;
+    this.screechGain = this.ctx.createGain();
+    this.screechGain.gain.value = 0;
+    screechSrc.connect(this.screechFilter);
+    this.screechFilter.connect(this.screechGain);
+    this.screechGain.connect(this.masterGain);
+    screechSrc.start();
   }
 
   public setMuted(m: boolean): void {
@@ -129,7 +150,7 @@ export class BrnoAudioEngine {
     return RADIO_STATIONS[this.radioIndex].name;
   }
 
-  public update(dt: number, driving: boolean, speedRatio: number, policeSirenActive: boolean): void {
+  public update(dt: number, driving: boolean, speedRatio: number, policeSirenActive: boolean, tireSlip = 0): void {
     this.isDriving = driving;
     if (!this.ctx || !this.engineOsc || !this.engineGain || !this.sirenOsc || !this.sirenGain) return;
     const now = this.ctx.currentTime;
@@ -141,6 +162,13 @@ export class BrnoAudioEngine {
       this.engineGain.gain.setTargetAtTime(0.085 + Math.abs(speedRatio) * 0.06, now, 0.08);
     } else {
       this.engineGain.gain.setTargetAtTime(0, now, 0.1);
+    }
+
+    // Tire screech proportional to real tire slip angle
+    if (this.screechGain && this.screechFilter) {
+      const slipVol = driving && tireSlip > 0.2 ? Math.min(0.11, (tireSlip - 0.2) * 0.14) : 0;
+      this.screechGain.gain.setTargetAtTime(slipVol, now, 0.05);
+      this.screechFilter.frequency.setTargetAtTime(1280 + tireSlip * 520, now, 0.08);
     }
 
     // Czech Police two-tone siren (tů-tá-tů-tá)

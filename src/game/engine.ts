@@ -728,14 +728,34 @@ export class BrnoGameEngine {
     }
 
     if (this.playerVehicle) {
-      if (!this.isDraggingMouse && !this.pointerLocked && Math.abs(this.playerVehicle.speed) > 2.5) {
-        const desiredYaw = this.playerVehicle.yaw + Math.PI;
+      const v = this.playerVehicle;
+      // Realistic GTA chase camera: blends car heading with actual velocity direction so drifts show cinematic side angle!
+      if (!this.isDraggingMouse && !this.pointerLocked && Math.abs(v.speed) > 1.8) {
+        const horizSpd = Math.hypot(v.vx, v.vz);
+        let travelYaw = v.yaw;
+        if (v.speed > 3.5 && horizSpd > 3.5) {
+          const velYaw = Math.atan2(v.vx, v.vz);
+          let slipDiff = velYaw - v.yaw;
+          while (slipDiff > Math.PI) slipDiff -= Math.PI * 2;
+          while (slipDiff < -Math.PI) slipDiff += Math.PI * 2;
+          travelYaw = v.yaw + slipDiff * 0.35;
+        }
+        const desiredYaw = v.speed >= -0.8 ? travelYaw + Math.PI : v.yaw;
         let diff = desiredYaw - this.camYaw;
         while (diff > Math.PI) diff -= Math.PI * 2;
         while (diff < -Math.PI) diff += Math.PI * 2;
-        this.camYaw += diff * Math.min(1, dt * 3.4);
+        const alignRate = v.speed >= 0 ? 3.8 + Math.min(2.2, horizSpd * 0.04) : 2.2;
+        this.camYaw += diff * Math.min(1, dt * alignRate);
       }
-      const speedExtra = Math.min(4.0, Math.abs(this.playerVehicle.speed) * 0.065);
+
+      // Dynamic speed FOV (62° -> 72° at high speed/nitro)
+      const targetFov = 62 + Math.min(10, Math.abs(v.speed) * 0.15);
+      if (Math.abs(this.camera.fov - targetFov) > 0.05) {
+        this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, Math.min(1, dt * 5));
+        this.camera.updateProjectionMatrix();
+      }
+
+      const speedExtra = Math.min(4.0, Math.abs(v.speed) * 0.065);
       const dist = 9.4 + speedExtra;
       const targetPos = new THREE.Vector3(
         pPos.x + Math.sin(this.camYaw) * dist * Math.cos(this.camPitch),
@@ -743,9 +763,13 @@ export class BrnoGameEngine {
         pPos.z + Math.cos(this.camYaw) * dist * Math.cos(this.camPitch)
       );
       const targetLook = new THREE.Vector3(pPos.x, pPos.y + 1.6, pPos.z);
-      this.camPos.lerp(targetPos, Math.min(1, dt * 8));
-      this.camLook.lerp(targetLook, Math.min(1, dt * 11));
+      this.camPos.lerp(targetPos, Math.min(1, dt * 8.5));
+      this.camLook.lerp(targetLook, Math.min(1, dt * 11.5));
     } else {
+      if (Math.abs(this.camera.fov - 62) > 0.05) {
+        this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, 62, Math.min(1, dt * 6));
+        this.camera.updateProjectionMatrix();
+      }
       const dist = 5.4;
       const targetPos = new THREE.Vector3(
         pPos.x + Math.sin(this.camYaw) * dist * Math.cos(this.camPitch),
@@ -761,7 +785,8 @@ export class BrnoGameEngine {
 
     const speedRatio = this.playerVehicle ? this.playerVehicle.speed / this.playerVehicle.spec.maxSpeed : 0;
     const policeSirenNear = this.wanted > 0 || Boolean(this.playerVehicle?.sirenOn);
-    this.audio.update(dt, Boolean(this.playerVehicle), speedRatio, policeSirenNear);
+    const tireSlip = this.playerVehicle ? this.playerVehicle.tireSlip : 0;
+    this.audio.update(dt, Boolean(this.playerVehicle), speedRatio, policeSirenNear, tireSlip);
 
     this.renderer.render(this.scene, this.camera);
 
